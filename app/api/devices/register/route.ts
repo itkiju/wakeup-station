@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+} from "node:crypto";
 import { getDatabase } from "@/lib/db";
 
 export async function POST(request: Request) {
@@ -45,6 +49,7 @@ export async function POST(request: Request) {
       .digest("hex");
 
     const deviceToken = randomBytes(32).toString("base64url");
+
     const tokenHash = createHash("sha256")
       .update(deviceToken)
       .digest("hex");
@@ -59,21 +64,29 @@ export async function POST(request: Request) {
         WHERE code_hash = ${codeHash}
           AND used_at IS NULL
           AND expires_at > NOW()
-        RETURNING code_hash
+          AND sync_group_id IS NOT NULL
+        RETURNING sync_group_id
       )
-      INSERT INTO device_registrations
-        (id, device_name, token_hash)
+      INSERT INTO device_registrations (
+        id,
+        device_name,
+        token_hash,
+        sync_group_id
+      )
       SELECT
         ${deviceId}::uuid,
         ${deviceName.trim()},
-        ${tokenHash}
+        ${tokenHash},
+        consumed.sync_group_id
       FROM consumed
-      RETURNING id
+      RETURNING id, sync_group_id
     `;
 
     if (result.length === 0) {
       return NextResponse.json(
-        { error: "등록 코드가 만료되었거나 이미 사용되었습니다." },
+        {
+          error: "등록 코드가 만료되었거나 그룹에 연결되지 않았습니다.",
+        },
         { status: 400 }
       );
     }
@@ -83,6 +96,7 @@ export async function POST(request: Request) {
         success: true,
         deviceId,
         deviceToken,
+        syncGroupId: result[0].sync_group_id,
       },
       {
         headers: {

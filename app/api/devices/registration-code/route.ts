@@ -28,21 +28,40 @@ export async function POST(request: Request) {
 
   try {
     const code = randomBytes(24).toString("base64url");
+
     const codeHash = createHash("sha256")
       .update(code)
       .digest("hex");
 
     const sql = getDatabase();
 
-    await sql`
-      INSERT INTO device_registration_codes
-        (code_hash, expires_at)
-      VALUES
-        (${codeHash}, NOW() + INTERVAL '10 minutes')
+    const result = await sql`
+      INSERT INTO device_registration_codes (
+        code_hash,
+        expires_at,
+        sync_group_id
+      )
+      SELECT
+        ${codeHash},
+        NOW() + INTERVAL '10 minutes',
+        id
+      FROM sync_groups
+      WHERE name = 'WakeUp Station 개인 그룹'
+      RETURNING code_hash
     `;
 
+    if (result.length === 0) {
+      return NextResponse.json(
+        { error: "공통 사용자 그룹을 찾을 수 없습니다." },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { code, expiresInSeconds: 600 },
+      {
+        code,
+        expiresInSeconds: 600,
+      },
       {
         headers: {
           "Cache-Control": "no-store",

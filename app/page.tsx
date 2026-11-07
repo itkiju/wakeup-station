@@ -3,7 +3,7 @@
 
 import DeviceRegistration from "@/components/DeviceRegistration";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const weekDays = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -30,10 +30,24 @@ function isMedication(value: unknown): value is Medication {
 
   return (
     typeof item.id === "string" &&
+    item.id.length > 0 &&
+    item.id.length <= 100 &&
     typeof item.name === "string" &&
+    item.name.trim().length > 0 &&
+    item.name.length <= 200 &&
     typeof item.time === "string" &&
+    /^([01]\d|2[0-3]):[0-5]\d$/.test(item.time) &&
     Array.isArray(item.days) &&
-    Array.isArray(item.completedDates)
+    item.days.length > 0 &&
+    item.days.every(
+      (day) => typeof day === "string" && weekDays.includes(day)
+    ) &&
+    Array.isArray(item.completedDates) &&
+    item.completedDates.every(
+      (date) =>
+        typeof date === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(date)
+    )
   );
 }
 
@@ -240,6 +254,17 @@ export default function Home() {
   const [editMedicationDays, setEditMedicationDays] = useState<string[]>([]);
 
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isMedicationDataValid, setIsMedicationDataValid] =
+    useState(false);
+
+  // 기존 설정이 없는 신규 기기인지 구분
+  const [isNewDevice, setIsNewDevice] = useState(false);
+
+  // 공통 그룹 동기화 관리
+  const syncVersionRef = useRef(0);
+  const lastSyncedSnapshotRef = useRef("");
+  const syncRequestRef = useRef<Promise<void>>(Promise.resolve());
+  const [isSyncReady, setIsSyncReady] = useState(false);
 
   // MEDICATION ALERT FEATURE
   const [medicationAlert, setMedicationAlert] =
@@ -259,49 +284,177 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  // 저장된 설정 불러오기
+  // 서버 우선 초기화 및 공통 복약 일정 불러오기
   useEffect(() => {
-    try {
-      const savedSettings = localStorage.getItem(
-        "wakeup-station-settings"
-      );
+    let cancelled = false;
 
-      if (savedSettings) {
-        const settings = JSON.parse(savedSettings);
+    async function loadSettingsAndServer() {
+      try {
+        const savedSettings = localStorage.getItem(
+          "wakeup-station-settings"
+        );
 
-        if (typeof settings.alarmTime === "string") {
-          setAlarmTime(settings.alarmTime);
+        let localMedications: Medication[] = [];
+        let localValid = false;
+
+        if (savedSettings !== null) {
+          const settings = JSON.parse(savedSettings);
+
+          if (typeof settings.alarmTime === "string") {
+            setAlarmTime(settings.alarmTime);
+          }
+
+          if (typeof settings.isAlarmOn === "boolean") {
+            setIsAlarmOn(settings.isAlarmOn);
+          }
+
+          if (Array.isArray(settings.selectedDays)) {
+            setSelectedDays(
+              settings.selectedDays.filter(
+                (day: unknown): day is string =>
+                  typeof day === "string" && weekDays.includes(day)
+              )
+            );
+          }
+
+          if (
+            Array.isArray(settings.medications) &&
+            settings.medications.every(isMedication)
+          ) {
+            localMedications = settings.medications;
+            localValid = true;
+          }
+        } else {
+          setIsNewDevice(true);
         }
 
-        if (typeof settings.isAlarmOn === "boolean") {
-          setIsAlarmOn(settings.isAlarmOn);
+        if (localValid) {
+          setMedications(localMedications);
+          setIsMedicationDataValid(true);
         }
 
-        if (Array.isArray(settings.selectedDays)) {
-          setSelectedDays(
-            settings.selectedDays.filter(
-              (day: unknown): day is string =>
-                typeof day === "string" && weekDays.includes(day)
-            )
-          );
+        const deviceToken = localStorage.getItem(
+          "wakeup-station-device-token"
+        );
+
+        if (!deviceToken) {
+          setIsMedicationDataValid(true);
+          setIsSyncReady(false);
+          return;
         }
 
-        if (Array.isArray(settings.medications)) {
-          setMedications(
-            settings.medications.filter(isMedication)
-          );
+        const response = await fetch("/api/medications/preview", {
+          headers: {
+            Authorization: `Bearer ${deviceToken}`,
+          },
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(`서버 조회 실패: ${response.status}`);
+        }
+
+        const result = await response.json();
+
+        if (!Array.isArray(result.medications)) {
+          throw new Error("서버 복약 데이터 형식이 올바르지 않습니다.");
+        }
+
+        const serverMedications: Medication[] =
+          result.medications.map((item: Record<string, unknown>) => ({
+            id: String(item.medication_id),
+            name: item.name,
+            time: item.time,
+            days: item.days,
+            completedDates: item.completed_dates,
+          }));
+
+        if (!serverMedications.every(isMedication)) {
+          throw new Error("서버 복약 데이터 검증에 실패했습니다.");
+        }
+
+        if (cancelled) return;
+
+        const serverVersion = Number(result.lastVersion);
+
+        if (
+          !Number.isSafeInteger(serverVersion) ||
+          serverVersion < 0
+        ) {
+          throw new Error("서버 동기화 버전이 올바르지 않습니다.");
+        }
+
+        syncVersionRef.current = serverVersion;
+
+        localStorage.setItem(
+          "wakeup-station-sync-version",
+          String(serverVersion)
+        );
+
+        // 완전히 비어 있는 신규 그룹에 한해서만 기존 로컬 일정 가져오기
+        if (
+          serverVersion === 0 &&
+          serverMedications.length === 0 &&
+          localValid &&
+          localMedications.length > 0
+        ) {
+          setMedications(localMedications);
+          lastSyncedSnapshotRef.current = JSON.stringify([]);
+        } else {
+          // 기존 그룹의 데이터는 서버를 기준으로 사용
+          setMedications(serverMedications);
+          lastSyncedSnapshotRef.current =
+            JSON.stringify(serverMedications);
+        }
+
+        setIsNewDevice(false);
+        setIsMedicationDataValid(true);
+        setIsSyncReady(true);
+
+        console.log("공통 복약 일정 불러오기 완료", {
+          version: serverVersion,
+          count: serverMedications.length,
+        });
+      } catch (error) {
+        console.error("초기 데이터 불러오기 실패:", error);
+        setIsSyncReady(false);
+
+        // 서버 확인 실패 시 기존 로컬 데이터는 보존하고
+        // 서버 동기화는 보류한다.
+        if (!cancelled && !isMedicationDataValid) {
+          setIsMedicationDataValid(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoaded(true);
         }
       }
-    } catch (error) {
-      console.error("설정을 불러오지 못했습니다.", error);
-    } finally {
-      setIsLoaded(true);
     }
+
+    function handleDeviceRegistered() {
+      setIsSyncReady(false);
+      void loadSettingsAndServer();
+    }
+
+    void loadSettingsAndServer();
+
+    window.addEventListener(
+      "wakeup-device-registered",
+      handleDeviceRegistered
+    );
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        "wakeup-device-registered",
+        handleDeviceRegistered
+      );
+    };
   }, []);
 
   // 설정 변경 시 자동 저장
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !isMedicationDataValid) return;
 
     const settings = {
       alarmTime,
@@ -324,11 +477,14 @@ export default function Home() {
     selectedDays,
     medications,
     isLoaded,
+    isMedicationDataValid,
   ]);
 
-  // 복약 일정 Neon 서버 자동 동기화
+  // 공통 그룹 자동 동기화 및 다른 기기 변경사항 확인
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !isMedicationDataValid || !isSyncReady) return;
+
+    let cancelled = false;
 
     const deviceToken = localStorage.getItem(
       "wakeup-station-device-token"
@@ -336,40 +492,262 @@ export default function Home() {
 
     if (!deviceToken) return;
 
-    const controller = new AbortController();
+    function convertServerMedications(items: unknown): Medication[] {
+      if (!Array.isArray(items)) {
+        throw new Error("서버 복약 데이터 형식 오류");
+      }
 
-    async function syncMedications() {
-      try {
-        const response = await fetch("/api/medications/sync", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${deviceToken}`,
-          },
-          body: JSON.stringify({ medications }),
-          signal: controller.signal,
+      const converted = items.map((item: Record<string, unknown>) => ({
+        id: String(item.medication_id),
+        name: item.name,
+        time: item.time,
+        days: item.days,
+        completedDates: item.completed_dates,
+      }));
+
+      if (!converted.every(isMedication)) {
+        throw new Error("서버 복약 데이터 검증 실패");
+      }
+
+      return converted;
+    }
+
+    async function fetchServerData() {
+      const response = await fetch("/api/medications/preview", {
+        headers: {
+          Authorization: `Bearer ${deviceToken}`,
+        },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        throw new Error(`서버 조회 실패: ${response.status}`);
+      }
+
+      return response.json();
+    }
+
+    async function syncLatest() {
+      const snapshot = JSON.stringify(medications);
+
+      if (snapshot === lastSyncedSnapshotRef.current) return;
+
+      const previousRequest = syncRequestRef.current;
+
+      const nextRequest = previousRequest
+        .catch(() => {})
+        .then(async () => {
+          if (cancelled) return;
+
+          const currentSnapshot = JSON.stringify(medications);
+
+          if (currentSnapshot === lastSyncedSnapshotRef.current) return;
+
+          try {
+            const response = await fetch("/api/medications/sync", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${deviceToken}`,
+              },
+              body: JSON.stringify({
+                medications,
+                expectedVersion: syncVersionRef.current,
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`동기화 실패: HTTP ${response.status}`);
+            }
+
+            const result = await response.json();
+
+            if (result.applied === true) {
+              syncVersionRef.current = result.newVersion;
+
+              localStorage.setItem(
+                "wakeup-station-sync-version",
+                String(result.newVersion)
+              );
+
+              lastSyncedSnapshotRef.current = currentSnapshot;
+
+              console.log("공통 복약 일정 저장 완료", result.newVersion);
+              return;
+            }
+
+            // 버전 충돌: 서버의 최신 데이터로 복구
+            const latest = await fetchServerData();
+
+            if (cancelled) return;
+
+            const serverMedications =
+              convertServerMedications(latest.medications);
+
+            syncVersionRef.current = Number(latest.lastVersion);
+
+            lastSyncedSnapshotRef.current =
+              JSON.stringify(serverMedications);
+
+            localStorage.setItem(
+              "wakeup-station-sync-version",
+              String(syncVersionRef.current)
+            );
+
+            setMedications(serverMedications);
+
+            console.warn("동기화 충돌: 서버 최신 데이터 적용");
+          } catch (error) {
+            console.error("그룹 동기화 실패:", error);
+          }
         });
 
-        if (!response.ok) {
-          console.error(
-            "복약 일정 서버 동기화 실패:",
-            response.status
-          );
+      syncRequestRef.current = nextRequest;
+      await nextRequest;
+    }
+
+    async function refreshFromServer() {
+      if (cancelled) return;
+
+      try {
+        const latest = await fetchServerData();
+
+        if (cancelled) return;
+
+        const serverVersion = Number(latest.lastVersion);
+
+        if (
+          !Number.isSafeInteger(serverVersion) ||
+          serverVersion <= syncVersionRef.current
+        ) {
           return;
         }
 
-        console.log("복약 일정 Neon 동기화 완료");
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          console.error("복약 일정 동기화 오류:", error);
+        // 로컬에 아직 서버에 반영되지 않은 수정이 있다면
+        // 덮어쓰지 않고 저장 요청에 충돌 검사를 맡긴다.
+        if (
+          JSON.stringify(medications) !==
+          lastSyncedSnapshotRef.current
+        ) {
+          return;
         }
+
+        const serverMedications =
+          convertServerMedications(latest.medications);
+
+        syncVersionRef.current = serverVersion;
+
+        lastSyncedSnapshotRef.current =
+          JSON.stringify(serverMedications);
+
+        localStorage.setItem(
+          "wakeup-station-sync-version",
+          String(serverVersion)
+        );
+
+        setMedications(serverMedications);
+
+        console.log("다른 기기의 변경사항 반영 완료");
+      } catch (error) {
+        console.error("공통 일정 확인 실패:", error);
       }
     }
 
-    syncMedications();
+    void syncLatest();
 
-    return () => controller.abort();
-  }, [medications, isLoaded]);
+    const syncTimer = window.setInterval(() => {
+      void syncLatest();
+    }, 1000);
+
+    const refreshTimer = window.setInterval(() => {
+      void refreshFromServer();
+    }, 5000);
+
+    function handleOnline() {
+      void refreshFromServer().then(() => syncLatest());
+    }
+
+    window.addEventListener("online", handleOnline);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(syncTimer);
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [medications, isLoaded, isMedicationDataValid, isSyncReady]);
+
+  // 아이폰 로컬 데이터와 서버 데이터 비교 (읽기 전용)
+  async function checkDeviceSyncStatus() {
+    const deviceToken = localStorage.getItem(
+      "wakeup-station-device-token"
+    );
+
+    if (!deviceToken) {
+      alert("기기 등록 정보가 없습니다. 먼저 기기를 등록해 주세요.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/medications/preview", {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${deviceToken}`,
+        },
+        cache: "no-store",
+      });
+
+      if (!response.ok) {
+        alert(`서버 데이터를 확인하지 못했습니다. (HTTP ${response.status})`);
+        return;
+      }
+
+      const result: unknown = await response.json();
+
+      if (
+        typeof result !== "object" ||
+        result === null ||
+        !("medications" in result) ||
+        !Array.isArray(result.medications)
+      ) {
+        alert("서버 응답 형식이 올바르지 않습니다.");
+        return;
+      }
+
+      const serverMedications = result.medications as Array<{
+        medication_id: string;
+        name: string;
+        time: string;
+      }>;
+
+      const localText = medications.length
+        ? medications.map((item) => `${item.name} (${item.time})`).join("\\n")
+        : "없음";
+
+      const serverText = serverMedications.length
+        ? serverMedications.map((item) => `${item.name} (${item.time})`).join("\\n")
+        : "없음";
+
+      const localIds = new Set(medications.map((item) => item.id));
+      const serverIds = new Set(
+        serverMedications.map((item) => item.medication_id)
+      );
+
+      const sameIds =
+        localIds.size === serverIds.size &&
+        [...localIds].every((id) => serverIds.has(id));
+
+      alert(
+        `📱 로컬 복약 일정 (${medications.length}개)\\n${localText}` +
+        `\\n\\n☁️ 서버 복약 일정 (${serverMedications.length}개)\\n${serverText}` +
+        `\\n\\n${sameIds ? "일정 ID 일치" : "⚠️ 로컬과 서버의 일정 ID가 다릅니다."}` +
+        "\\n\n이 화면에서는 데이터를 변경하지 않습니다."
+      );
+    } catch (error) {
+      console.error("복약 일정 비교 실패:", error);
+      alert("네트워크 오류로 서버 데이터를 조회하지 못했습니다.");
+    }
+  }
 
   // 기상 알람 요일 선택
   function toggleDay(day: string) {
@@ -458,6 +836,25 @@ export default function Home() {
       days: newMedicationDays,
       completedDates: [],
     };
+
+    if (!isMedicationDataValid && !isNewDevice) {
+      alert("기존 복약 데이터를 확인할 수 없어 약 추가를 보류합니다.");
+      return;
+    }
+
+    if (isNewDevice) {
+      const existingToken = localStorage.getItem(
+        "wakeup-station-device-token"
+      );
+
+      if (existingToken) {
+        alert("기존 등록 기기의 서버 데이터를 먼저 확인해야 합니다.");
+        return;
+      }
+
+      setIsMedicationDataValid(true);
+      setIsNewDevice(false);
+    }
 
     setMedications((prev) => [...prev, newMedication]);
 
@@ -629,6 +1026,16 @@ export default function Home() {
 
     <main className="min-h-screen bg-[#0b1220] px-5 py-8 text-white sm:px-8">
       <DeviceRegistration />
+
+      <div className="mx-auto w-full max-w-md px-5 pb-4">
+        <button
+          type="button"
+          onClick={checkDeviceSyncStatus}
+          className="w-full rounded-2xl border border-cyan-500/30 bg-slate-800 px-4 py-3 text-sm font-semibold text-cyan-300"
+        >
+          기기 연결 상태 확인
+        </button>
+      </div>
       <PushNotificationButton />
       <div className="mx-auto max-w-5xl">
 
@@ -1265,9 +1672,11 @@ export default function Home() {
 
         {/* 저장 상태 */}
         <p className="mb-5 text-center text-xs text-emerald-400">
-          {isLoaded
-            ? "✓ 알람 및 복약 설정 저장 완료"
-            : "설정을 불러오는 중..."}
+          {!isLoaded
+              ? "설정을 불러오는 중..."
+              : isMedicationDataValid
+                ? "복약 설정 로컬 저장 활성화"
+                : "복약 데이터 보호 중 · 저장 보류"}
         </p>
 
         {/* 하단 정보 */}

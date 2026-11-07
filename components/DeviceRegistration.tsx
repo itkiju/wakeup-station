@@ -39,6 +39,9 @@ export default function DeviceRegistration() {
       }
 
       localStorage.setItem(TOKEN_KEY, data.deviceToken);
+      window.dispatchEvent(
+        new Event("wakeup-device-registered")
+      );
 
       setRegistered(true);
       setRegistrationCode("");
