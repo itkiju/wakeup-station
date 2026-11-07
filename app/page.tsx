@@ -36,6 +36,19 @@ function isMedication(value: unknown): value is Medication {
 }
 
 export default function Home() {
+  // WakeUp Station Pro 서비스 워커 등록
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    navigator.serviceWorker.register("/sw.js")
+      .then(() => {
+        console.log("서비스 워커 등록 성공");
+      })
+      .catch((error) => {
+        console.error("서비스 워커 등록 실패:", error);
+      });
+  }, []);
+
   const [now, setNow] = useState<Date | null>(null);
 
   // 기상 알람 설정
