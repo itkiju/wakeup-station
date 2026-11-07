@@ -59,7 +59,13 @@ export default function Home() {
   const [editMedicationTime, setEditMedicationTime] = useState("08:00");
   const [editMedicationDays, setEditMedicationDays] = useState<string[]>([]);
 
-  const [isLoaded, setIsLoaded] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);\n
+  // MEDICATION ALERT FEATURE
+  const [medicationAlert, setMedicationAlert] =
+    useState<Medication | null>(null);
+  const [dismissedAlerts, setDismissedAlerts] =
+    useState<string[]>([]);
+
 
   // 현재 시간 업데이트
   useEffect(() => {
@@ -305,11 +311,96 @@ export default function Home() {
     .filter((medication) => medication.days.includes(todayDay))
     .sort((a, b) => a.time.localeCompare(b.time));
 
+
+  // 설정된 복용 시간이 되면 앱 내부 알림 표시
+  useEffect(() => {
+    if (!now || !isLoaded || medicationAlert) return;
+
+    const todayKey = getDateKey(now);
+    const currentHour = String(now.getHours()).padStart(2, "0");
+    const currentMinute = String(now.getMinutes()).padStart(2, "0");
+    const timeKey = `${currentHour}:${currentMinute}`;
+
+    const medication = medications.find((item) => {
+      const day = weekDays[(now.getDay() + 6) % 7];
+      const alertKey = `${todayKey}-${item.id}-${item.time}`;
+
+      return (
+        item.days.includes(day) &&
+        item.time === timeKey &&
+        !item.completedDates.includes(todayKey) &&
+        !dismissedAlerts.includes(alertKey)
+      );
+    });
+
+    if (medication) {
+      setMedicationAlert(medication);
+    }
+  }, [now, medications, isLoaded, medicationAlert, dismissedAlerts]);
+
+  function dismissMedicationAlert() {
+    if (!medicationAlert || !now) return;
+
+    const alertKey =
+      `${getDateKey(now)}-${medicationAlert.id}-${medicationAlert.time}`;
+
+    setDismissedAlerts((prev) => [...prev, alertKey]);
+    setMedicationAlert(null);
+  }
+
+  function completeMedicationAlert() {
+    if (!medicationAlert) return;
+
+    toggleMedicationComplete(medicationAlert.id);
+    dismissMedicationAlert();
+  }
+
   const completedCount = todayMedications.filter(
     (medication) => medication.completedDates.includes(today)
   ).length;
 
   return (
+
+    <>
+      {medicationAlert && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-5">
+          <div className="w-full max-w-sm rounded-3xl border border-cyan-500/30 bg-[#172235] p-6 text-white shadow-2xl">
+            <p className="mb-2 text-sm font-semibold text-cyan-400">
+              WAKEUP STATION PRO
+            </p>
+
+            <h2 className="mb-4 text-2xl font-bold">
+              🔔 복용 시간이에요!
+            </h2>
+
+            <p className="mb-2 text-lg font-semibold">
+              {medicationAlert.name}
+            </p>
+
+            <p className="mb-6 text-sm text-slate-300">
+              설정한 복용 시간 {medicationAlert.time}이 되었어요.
+              약을 복용해 주세요.
+            </p>
+
+            <button
+              type="button"
+              onClick={completeMedicationAlert}
+              className="mb-3 w-full rounded-xl bg-emerald-500 py-3 font-semibold text-white"
+            >
+              복용 완료
+            </button>
+
+            <button
+              type="button"
+              onClick={dismissMedicationAlert}
+              className="w-full rounded-xl bg-slate-700 py-3 font-semibold text-slate-200"
+            >
+              나중에
+            </button>
+          </div>
+        </div>
+      )}
+
     <main className="min-h-screen bg-[#0b1220] px-5 py-8 text-white sm:px-8">
       <div className="mx-auto max-w-5xl">
 
@@ -958,5 +1049,6 @@ export default function Home() {
 
       </div>
     </main>
+    </>
   );
 }
