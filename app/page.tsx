@@ -36,39 +36,101 @@ function isMedication(value: unknown): value is Medication {
 }
 
 
+
 function PushNotificationButton() {
   const [permission, setPermission] = useState("default");
   const [message, setMessage] = useState("");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if ("Notification" in window) {
-      setPermission(Notification.permission);
+    if (!("Notification" in window)) return;
+
+    setPermission(Notification.permission);
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.ready
+        .then(async (registration) => {
+          const subscription =
+            await registration.pushManager.getSubscription();
+          setSubscribed(Boolean(subscription));
+        })
+        .catch(console.error);
     }
   }, []);
 
   async function enableNotifications() {
     if (
       !("Notification" in window) ||
-      !("serviceWorker" in navigator)
+      !("serviceWorker" in navigator) ||
+      !("PushManager" in window)
     ) {
       setMessage("이 환경에서는 웹 푸시 알림을 지원하지 않습니다.");
       return;
     }
 
-    try {
-      const result = await Notification.requestPermission();
-      setPermission(result);
+    setLoading(true);
+    setMessage("");
 
-      if (result === "granted") {
-        setMessage("알림 권한이 허용되었습니다!");
-      } else if (result === "denied") {
-        setMessage("알림이 차단되었습니다. 아이폰 설정에서 확인해 주세요.");
-      } else {
-        setMessage("알림 권한이 아직 허용되지 않았습니다.");
+    try {
+      let currentPermission = Notification.permission;
+
+      if (currentPermission === "default") {
+        currentPermission = await Notification.requestPermission();
       }
+
+      setPermission(currentPermission);
+
+      if (currentPermission !== "granted") {
+        setMessage("아이폰 설정에서 알림을 허용해 주세요.");
+        return;
+      }
+
+      const publicKey =
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+
+      if (!publicKey) {
+        setMessage("VAPID 공개 키가 설정되지 않았습니다.");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.ready;
+
+      const existing =
+        await registration.pushManager.getSubscription();
+
+      if (existing) {
+        setSubscribed(true);
+        setMessage("이 기기의 푸시 구독이 이미 생성되어 있습니다.");
+        return;
+      }
+
+      const padding = "=".repeat(
+        (4 - (publicKey.length % 4)) % 4
+      );
+
+      const base64 = (publicKey + padding)
+        .replace(/-/g, "+")
+        .replace(/_/g, "/");
+
+      const raw = window.atob(base64);
+      const applicationServerKey = Uint8Array.from(
+        raw,
+        (char) => char.charCodeAt(0)
+      );
+
+      await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey,
+      });
+
+      setSubscribed(true);
+      setMessage("푸시 구독 생성 완료! 서버 연결은 다음 단계에서 진행합니다.");
     } catch (error) {
-      console.error(error);
-      setMessage("알림 권한 요청 중 오류가 발생했습니다.");
+      console.error("푸시 구독 오류:", error);
+      setMessage("푸시 구독 중 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -85,12 +147,16 @@ function PushNotificationButton() {
       <button
         type="button"
         onClick={enableNotifications}
-        disabled={permission === "granted"}
+        disabled={loading || subscribed}
         className="w-full rounded-2xl bg-cyan-500 px-4 py-3 font-bold text-slate-950 disabled:opacity-50"
       >
-        {permission === "granted"
-          ? "알림 권한 허용됨 ✓"
-          : "푸시 알림 활성화"}
+        {loading
+          ? "설정 중..."
+          : subscribed
+            ? "푸시 구독 완료 ✓"
+            : permission === "granted"
+              ? "푸시 구독 시작"
+              : "푸시 알림 활성화"}
       </button>
 
       {message && (
