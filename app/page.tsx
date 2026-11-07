@@ -495,7 +495,7 @@ export default function Home() {
               type="time"
               value={alarmTime}
               onChange={(e) => setAlarmTime(e.target.value)}
-              className="w-full rounded-xl border border-white/10 bg-[#0b1220] px-5 py-4 text-3xl text-white outline-none focus:border-cyan-400 sm:w-auto"
+              className="w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-sm text-white outline-none focus:border-cyan-400"
             />
           </div>
 
@@ -595,7 +595,7 @@ export default function Home() {
                 onChange={(e) =>
                   setNewMedicationTime(e.target.value)
                 }
-                className="w-full rounded-xl border border-white/10 bg-[#172235] px-4 py-3 text-white outline-none focus:border-emerald-400 sm:w-auto"
+                className="w-full rounded-xl border border-white/10 bg-[#172235] px-4 py-3 text-white outline-none focus:border-emerald-400"
               />
             </div>
 
@@ -761,7 +761,7 @@ export default function Home() {
                             onChange={(e) =>
                               setEditMedicationTime(e.target.value)
                             }
-                            className="mb-5 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white outline-none focus:border-cyan-400 sm:w-auto"
+                            className="mb-5 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white outline-none focus:border-cyan-400"
                           />
 
                           <p className="mb-3 text-sm text-slate-400">
