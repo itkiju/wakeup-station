@@ -670,12 +670,85 @@ export default function Home() {
 
                         <button
                           type="button"
+                          onClick={() => startEditMedication(medication)}
+                          className="rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-4 py-2 text-sm font-semibold text-cyan-400"
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => deleteMedication(medication.id)}
                           className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20"
                         >
                           삭제
                         </button>
                       </div>
+
+                      {/* ALL SCHEDULE EDIT FORM */}
+                      {editingMedicationId === medication.id && (
+                        <div className="mt-5 rounded-xl border border-cyan-500/30 bg-[#172235] p-4">
+                          <h4 className="mb-4 font-semibold text-cyan-400">
+                            복용 일정 수정
+                          </h4>
+
+                          <label className="mb-2 block text-sm text-slate-400">
+                            약 이름
+                          </label>
+                          <input
+                            type="text"
+                            value={editMedicationName}
+                            onChange={(e) => setEditMedicationName(e.target.value)}
+                            className="mb-4 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white"
+                          />
+
+                          <label className="mb-2 block text-sm text-slate-400">
+                            복용 시간
+                          </label>
+                          <input
+                            type="time"
+                            value={editMedicationTime}
+                            onChange={(e) => setEditMedicationTime(e.target.value)}
+                            className="mb-5 block box-border w-full min-w-0 max-w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-base text-white"
+                          />
+
+                          <p className="mb-3 text-sm text-slate-400">
+                            복용 요일
+                          </p>
+                          <div className="mb-6 flex flex-wrap gap-2">
+                            {weekDays.map((day) => (
+                              <button
+                                type="button"
+                                key={day}
+                                onClick={() => toggleEditMedicationDay(day)}
+                                className={`h-10 w-10 rounded-full text-sm font-semibold ${
+                                  editMedicationDays.includes(day)
+                                    ? "bg-cyan-500 text-white"
+                                    : "border border-white/10 bg-[#0b1220] text-slate-400"
+                                }`}
+                              >
+                                {day}
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={saveEditMedication}
+                              className="flex-1 rounded-xl bg-cyan-500 py-3 font-semibold text-white"
+                            >
+                              수정 완료
+                            </button>
+                            <button
+                              type="button"
+                              onClick={cancelEditMedication}
+                              className="flex-1 rounded-xl bg-slate-700 py-3 font-semibold text-slate-300"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
               </div>
