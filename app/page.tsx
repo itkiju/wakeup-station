@@ -46,18 +46,8 @@ function PushNotificationButton() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!("Notification" in window)) return;
-
-    setPermission(Notification.permission);
-
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.ready
-        .then(async (registration) => {
-          const subscription =
-            await registration.pushManager.getSubscription();
-          setSubscribed(Boolean(subscription));
-        })
-        .catch(console.error);
+    if ("Notification" in window) {
+      setPermission(Notification.permission);
     }
   }, []);
 
@@ -75,6 +65,15 @@ function PushNotificationButton() {
     setMessage("");
 
     try {
+      const deviceToken = localStorage.getItem(
+        "wakeup-station-device-token"
+      );
+
+      if (!deviceToken) {
+        setMessage("먼저 아이폰 기기 등록을 완료해 주세요.");
+        return;
+      }
+
       let currentPermission = Notification.permission;
 
       if (currentPermission === "default") {
@@ -88,22 +87,10 @@ function PushNotificationButton() {
         return;
       }
 
-      const publicKey =
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
 
       if (!publicKey) {
         setMessage("VAPID 공개 키가 설정되지 않았습니다.");
-        return;
-      }
-
-      const registration = await navigator.serviceWorker.ready;
-
-      const existing =
-        await registration.pushManager.getSubscription();
-
-      if (existing) {
-        setSubscribed(true);
-        setMessage("이 기기의 푸시 구독이 이미 생성되어 있습니다.");
         return;
       }
 
@@ -116,21 +103,66 @@ function PushNotificationButton() {
         .replace(/_/g, "/");
 
       const raw = window.atob(base64);
+
       const applicationServerKey = Uint8Array.from(
         raw,
         (char) => char.charCodeAt(0)
       );
 
-      await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey,
+      const registration = await navigator.serviceWorker.ready;
+
+      let subscription =
+        await registration.pushManager.getSubscription();
+
+      // 기존 구독의 VAPID 공개 키가 변경되었다면 갱신
+      if (subscription) {
+        const existingKey = subscription.options.applicationServerKey;
+
+        const matches =
+          existingKey !== null &&
+          existingKey.byteLength === applicationServerKey.byteLength &&
+          Array.from(new Uint8Array(existingKey)).every(
+            (value, index) => value === applicationServerKey[index]
+          );
+
+        if (!matches) {
+          await subscription.unsubscribe();
+          subscription = null;
+        }
+      }
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey,
+        });
+      }
+
+      const response = await fetch("/api/push/subscribe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${deviceToken}`,
+        },
+        body: JSON.stringify({
+          subscription: subscription.toJSON(),
+        }),
       });
 
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setMessage("기기 인증에 실패했습니다. 기기 등록 상태를 확인해 주세요.");
+        } else {
+          setMessage(`서버 연결에 실패했습니다. (HTTP ${response.status})`);
+        }
+        return;
+      }
+
       setSubscribed(true);
-      setMessage("푸시 구독 생성 완료! 서버 연결은 다음 단계에서 진행합니다.");
+      setMessage("아이폰 푸시 알림 서버 연결 완료!");
     } catch (error) {
-      console.error("푸시 구독 오류:", error);
-      setMessage("푸시 구독 중 오류가 발생했습니다.");
+      console.error("푸시 알림 설정 오류:", error);
+      setMessage("푸시 알림 설정 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -155,9 +187,9 @@ function PushNotificationButton() {
         {loading
           ? "설정 중..."
           : subscribed
-            ? "푸시 구독 완료 ✓"
+            ? "푸시 서버 연결 완료 ✓"
             : permission === "granted"
-              ? "푸시 구독 시작"
+              ? "푸시 서버 연결하기"
               : "푸시 알림 활성화"}
       </button>
 
