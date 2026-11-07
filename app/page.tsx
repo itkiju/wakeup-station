@@ -59,7 +59,8 @@ export default function Home() {
   const [editMedicationTime, setEditMedicationTime] = useState("08:00");
   const [editMedicationDays, setEditMedicationDays] = useState<string[]>([]);
 
-  const [isLoaded, setIsLoaded] = useState(false);\n
+  const [isLoaded, setIsLoaded] = useState(false);
+
   // MEDICATION ALERT FEATURE
   const [medicationAlert, setMedicationAlert] =
     useState<Medication | null>(null);
