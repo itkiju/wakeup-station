@@ -668,9 +668,13 @@ export default function Home() {
                           </p>
                         </div>
 
-                        <span className="rounded-lg bg-cyan-500/10 px-3 py-2 text-xs text-cyan-400">
-                          등록 완료
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => deleteMedication(medication.id)}
+                          className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-400 hover:bg-red-500/20"
+                        >
+                          삭제
+                        </button>
                       </div>
                     </div>
                   ))}
