@@ -1,6 +1,8 @@
 
 "use client";
 
+import DeviceRegistration from "@/components/DeviceRegistration";
+
 import { useEffect, useState } from "react";
 
 const weekDays = ["월", "화", "수", "목", "금", "토", "일"];
@@ -549,6 +551,7 @@ export default function Home() {
       )}
 
     <main className="min-h-screen bg-[#0b1220] px-5 py-8 text-white sm:px-8">
+      <DeviceRegistration />
       <PushNotificationButton />
       <div className="mx-auto max-w-5xl">
 
