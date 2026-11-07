@@ -35,6 +35,73 @@ function isMedication(value: unknown): value is Medication {
   );
 }
 
+
+function PushNotificationButton() {
+  const [permission, setPermission] = useState("default");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if ("Notification" in window) {
+      setPermission(Notification.permission);
+    }
+  }, []);
+
+  async function enableNotifications() {
+    if (
+      !("Notification" in window) ||
+      !("serviceWorker" in navigator)
+    ) {
+      setMessage("이 환경에서는 웹 푸시 알림을 지원하지 않습니다.");
+      return;
+    }
+
+    try {
+      const result = await Notification.requestPermission();
+      setPermission(result);
+
+      if (result === "granted") {
+        setMessage("알림 권한이 허용되었습니다!");
+      } else if (result === "denied") {
+        setMessage("알림이 차단되었습니다. 아이폰 설정에서 확인해 주세요.");
+      } else {
+        setMessage("알림 권한이 아직 허용되지 않았습니다.");
+      }
+    } catch (error) {
+      console.error(error);
+      setMessage("알림 권한 요청 중 오류가 발생했습니다.");
+    }
+  }
+
+  return (
+    <section className="mb-6 rounded-3xl border border-cyan-500/20 bg-[#172235] p-5">
+      <h2 className="mb-2 text-lg font-bold text-white">
+        🔔 푸시 알림 설정
+      </h2>
+
+      <p className="mb-4 text-sm text-slate-300">
+        아이폰에서 복용 알림을 받기 위한 설정입니다.
+      </p>
+
+      <button
+        type="button"
+        onClick={enableNotifications}
+        disabled={permission === "granted"}
+        className="w-full rounded-2xl bg-cyan-500 px-4 py-3 font-bold text-slate-950 disabled:opacity-50"
+      >
+        {permission === "granted"
+          ? "알림 권한 허용됨 ✓"
+          : "푸시 알림 활성화"}
+      </button>
+
+      {message && (
+        <p className="mt-3 text-sm text-cyan-200">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}
+
 export default function Home() {
   // WakeUp Station Pro 서비스 워커 등록
   useEffect(() => {
@@ -416,6 +483,7 @@ export default function Home() {
       )}
 
     <main className="min-h-screen bg-[#0b1220] px-5 py-8 text-white sm:px-8">
+      <PushNotificationButton />
       <div className="mx-auto max-w-5xl">
 
         {/* 상단 헤더 */}
