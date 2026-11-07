@@ -37,7 +37,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const subscription = body as Record<string, unknown>;
+    const payload = body as Record<string, unknown>;
+    const subscription = payload.subscription as Record<string, unknown>;
     const keys = subscription.keys;
 
     if (
