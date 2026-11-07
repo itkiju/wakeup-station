@@ -326,6 +326,51 @@ export default function Home() {
     isLoaded,
   ]);
 
+  // 복약 일정 Neon 서버 자동 동기화
+  useEffect(() => {
+    if (!isLoaded) return;
+
+    const deviceToken = localStorage.getItem(
+      "wakeup-station-device-token"
+    );
+
+    if (!deviceToken) return;
+
+    const controller = new AbortController();
+
+    async function syncMedications() {
+      try {
+        const response = await fetch("/api/medications/sync", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${deviceToken}`,
+          },
+          body: JSON.stringify({ medications }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          console.error(
+            "복약 일정 서버 동기화 실패:",
+            response.status
+          );
+          return;
+        }
+
+        console.log("복약 일정 Neon 동기화 완료");
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.error("복약 일정 동기화 오류:", error);
+        }
+      }
+    }
+
+    syncMedications();
+
+    return () => controller.abort();
+  }, [medications, isLoaded]);
+
   // 기상 알람 요일 선택
   function toggleDay(day: string) {
     setSelectedDays((prev) =>
