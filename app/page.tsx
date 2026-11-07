@@ -632,6 +632,52 @@ export default function Home() {
 
           </div>
 
+
+          {/* ALL MEDICATION SCHEDULES */}
+          <div className="mt-8">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="font-semibold">등록된 복용 일정</h3>
+              <span className="text-sm text-slate-400">
+                총 {medications.length}개
+              </span>
+            </div>
+
+            {medications.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-white/10 p-8 text-center">
+                <p className="text-slate-400">
+                  등록된 복용 일정이 없습니다.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {[...medications]
+                  .sort((a, b) => a.time.localeCompare(b.time))
+                  .map((medication) => (
+                    <div
+                      key={medication.id}
+                      className="rounded-xl border border-white/10 bg-[#0b1220] p-4"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold">
+                            {medication.name}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-400">
+                            {medication.time} · 매주{" "}
+                            {medication.days.join(", ")}
+                          </p>
+                        </div>
+
+                        <span className="rounded-lg bg-cyan-500/10 px-3 py-2 text-xs text-cyan-400">
+                          등록 완료
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+
           {/* 오늘의 복용 일정 */}
           <div className="mt-8">
 
