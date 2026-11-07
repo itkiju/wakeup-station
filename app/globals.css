@@ -24,3 +24,22 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* iPhone Safari 시간 입력창 크기 조정 */
+input[type="time"] {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 48px;
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* 시간 입력창 내부 표시 영역 */
+input[type="time"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
