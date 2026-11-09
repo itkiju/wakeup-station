@@ -217,6 +217,10 @@ function PushNotificationButton() {
 }
 
 export default function Home() {
+  const [activeTab, setActiveTab] = useState<
+    "home" | "analysis" | "settings"
+  >("home");
+
   // WakeUp Station Pro 서비스 워커 등록
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return;
@@ -1024,20 +1028,58 @@ export default function Home() {
         </div>
       )}
 
-    <main className="min-h-screen bg-[#0b1220] px-5 py-8 text-white sm:px-8">
+    <main className="min-h-screen bg-[#0b1220] px-5 py-8 pb-28 text-white sm:px-8">
       <DeviceRegistration />
 
-      <div className="mx-auto w-full max-w-md px-5 pb-4">
-        <button
-          type="button"
-          onClick={checkDeviceSyncStatus}
-          className="w-full rounded-2xl border border-cyan-500/30 bg-slate-800 px-4 py-3 text-sm font-semibold text-cyan-300"
-        >
-          기기 연결 상태 확인
-        </button>
-      </div>
-      <PushNotificationButton />
-      <div className="mx-auto max-w-5xl">
+      {activeTab === "settings" && (
+        <div className="mx-auto max-w-2xl space-y-5">
+          <header className="mb-6">
+            <p className="text-sm tracking-widest text-cyan-400">
+              WAKEUP STATION PRO
+            </p>
+            <h1 className="mt-2 text-3xl font-bold">설정</h1>
+            <p className="mt-2 text-slate-400">
+              기기 연결과 알림을 관리합니다.
+            </p>
+          </header>
+
+          <section className="rounded-3xl border border-white/10 bg-[#172235] p-5">
+            <h2 className="mb-4 text-lg font-semibold">기기 관리</h2>
+            <button
+              type="button"
+              onClick={checkDeviceSyncStatus}
+              className="w-full rounded-2xl border border-cyan-500/30 bg-slate-800 px-4 py-3 font-semibold text-cyan-300"
+            >
+              기기 연결 상태 확인
+            </button>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-[#172235] p-5">
+            <h2 className="mb-4 text-lg font-semibold">푸시 알림</h2>
+            <PushNotificationButton />
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-[#172235] p-5">
+            <h2 className="text-lg font-semibold">스마트 약통 연결</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              ESP32 연결 기능은 추후 추가할 예정입니다.
+            </p>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "analysis" && (
+        <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-[#172235] p-6">
+          <h1 className="text-2xl font-bold">복약 분석</h1>
+          <p className="mt-3 text-sm text-slate-400">
+            주간·월간 평균 복용 시각과 복약 기록을 준비하고 있습니다.
+          </p>
+        </div>
+      )}
+      <div
+        className="mx-auto max-w-5xl"
+        style={{ display: activeTab === "home" ? "block" : "none" }}
+      >
 
         {/* 상단 헤더 */}
         <header className="mb-10 flex flex-wrap items-center justify-between gap-4">
@@ -1685,6 +1727,34 @@ export default function Home() {
         </footer>
 
       </div>
+    
+      <nav
+        aria-label="앱 메뉴"
+        className="fixed bottom-0 left-0 right-0 z-40 border-t border-white/10 bg-[#111827]/95 px-4 py-3 backdrop-blur"
+      >
+        <div className="mx-auto grid max-w-md grid-cols-3 gap-2">
+          {([
+            ["home", "⌂", "홈"],
+            ["analysis", "▥", "복약 분석"],
+            ["settings", "⚙", "설정"],
+          ] as const).map(([tab, icon, label]) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setActiveTab(tab)}
+              aria-current={activeTab === tab ? "page" : undefined}
+              className={`rounded-2xl px-2 py-2 text-sm font-medium transition ${
+                activeTab === tab
+                  ? "bg-cyan-500/15 text-cyan-300"
+                  : "text-slate-400"
+              }`}
+            >
+              <span className="block text-xl">{icon}</span>
+              {label}
+            </button>
+          ))}
+        </div>
+      </nav>
     </main>
     </>
   );
