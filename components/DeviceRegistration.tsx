@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const TOKEN_KEY = "wakeup-station-device-token";
 
@@ -10,6 +10,13 @@ export default function DeviceRegistration() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem(TOKEN_KEY);
+    setRegistered(Boolean(token));
+    setReady(true);
+  }, []);
 
   async function registerDevice() {
     if (!deviceName.trim() || !registrationCode.trim()) {
@@ -56,6 +63,8 @@ export default function DeviceRegistration() {
       setLoading(false);
     }
   }
+
+  if (!ready || registered) return null;
 
   return (
     <section className="mb-6 rounded-3xl border border-cyan-500/20 bg-[#172235] p-5">
