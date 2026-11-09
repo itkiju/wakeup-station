@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { verifyDeviceContext } from "@/lib/device-auth";
-
+import { getDatabase } from "@/lib/db";
 
 // ========================================
 // WakeUp Station Pro
-// ESP32 Sensor Telemetry API
+// ESP32 Telemetry API
 // ========================================
 
 export async function POST(request: Request) {
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. 요청 데이터 확인
+    // 2. JSON 데이터 확인
     const body: unknown = await request.json();
 
     if (
@@ -62,21 +62,38 @@ export async function POST(request: Request) {
       );
     }
 
-    // 4. 수신 확인
-    // 이번 단계에서는 DB에 저장하지 않음
-    console.log("ESP32 telemetry received", {
-      deviceId: context.deviceId,
-      temperature,
-      humidity,
-      lidOpen,
-    });
+    // 4. Neon 데이터베이스 저장
+    const sql = getDatabase();
 
+    await sql`
+      INSERT INTO device_telemetry (
+        device_id,
+        temperature,
+        humidity,
+        lid_open,
+        updated_at
+      )
+      VALUES (
+        ${context.deviceId}::uuid,
+        ${temperature},
+        ${humidity},
+        ${lidOpen},
+        NOW()
+      )
+      ON CONFLICT (device_id)
+      DO UPDATE SET
+        temperature = EXCLUDED.temperature,
+        humidity = EXCLUDED.humidity,
+        lid_open = EXCLUDED.lid_open,
+        updated_at = NOW()
+    `;
+
+    // 5. 저장 성공 응답
     return NextResponse.json(
       {
         success: true,
-        deviceId: context.deviceId,
+        message: "센서 데이터 저장 성공",
         receivedAt: new Date().toISOString(),
-        message: "센서 데이터 수신 성공",
       },
       {
         headers: {
