@@ -2,6 +2,7 @@
 "use client";
 
 import DeviceRegistration from "@/components/DeviceRegistration";
+import MedicationAnalysis from "@/components/MedicationAnalysis";
 
 import { useEffect, useRef, useState } from "react";
 
@@ -867,29 +868,85 @@ export default function Home() {
     setNewMedicationDays(weekDays);
   }
 
-  // 복용 완료 상태 변경
-  function toggleMedicationComplete(id: string) {
-    if (!now) return;
+  // 복약 이력 저장 중 중복 요청 방지
+  const medicationHistoryPendingRef = useRef(new Set<string>());
+
+  // 복약 완료 및 취소 기록을 Neon에 저장
+  async function toggleMedicationComplete(id: string): Promise<boolean> {
+    if (!now) return false;
 
     const today = getDateKey(now);
+    const medication = medications.find((item) => item.id === id);
 
-    setMedications((prev) =>
-      prev.map((medication) => {
-        if (medication.id !== id) return medication;
+    if (!medication) return false;
 
-        const isCompleted =
-          medication.completedDates.includes(today);
+    const requestKey = `${today}-${id}`;
 
-        return {
-          ...medication,
-          completedDates: isCompleted
-            ? medication.completedDates.filter(
-                (date) => date !== today
-              )
-            : [...medication.completedDates, today],
-        };
-      })
-    );
+    if (medicationHistoryPendingRef.current.has(requestKey)) {
+      return false;
+    }
+
+    const token = localStorage.getItem("wakeup-station-device-token");
+
+    if (!token) {
+      alert("기기 등록이 필요합니다.");
+      return false;
+    }
+
+    const isCompleted = medication.completedDates.includes(today);
+    const scheduledDate = new Date(`${today}T${medication.time}:00`);
+
+    if (Number.isNaN(scheduledDate.getTime())) {
+      alert("복약 예정 시각이 올바르지 않습니다.");
+      return false;
+    }
+
+    medicationHistoryPendingRef.current.add(requestKey);
+
+    try {
+      const response = await fetch("/api/medications/history", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          medicationId: id,
+          scheduledAt: scheduledDate.toISOString(),
+          status: isCompleted ? "cancelled" : "completed",
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result.success !== true) {
+        throw new Error(result.error || "복약 이력 저장 실패");
+      }
+
+      setMedications((prev) =>
+        prev.map((item) => {
+          if (item.id !== id) return item;
+
+          return {
+            ...item,
+            completedDates: isCompleted
+              ? item.completedDates.filter((date) => date !== today)
+              : item.completedDates.includes(today)
+                ? item.completedDates
+                : [...item.completedDates, today],
+          };
+        })
+      );
+
+      console.log("복약 이력 저장 성공:", medication.name);
+      return true;
+    } catch (error) {
+      console.error("복약 이력 저장 오류:", error);
+      alert("복약 이력을 저장하지 못했습니다. 다시 시도해 주세요.");
+      return false;
+    } finally {
+      medicationHistoryPendingRef.current.delete(requestKey);
+    }
   }
 
   // 복약 일정 삭제
@@ -975,11 +1032,25 @@ export default function Home() {
     setMedicationAlert(null);
   }
 
-  function completeMedicationAlert() {
-    if (!medicationAlert) return;
+  async function completeMedicationAlert() {
+    if (!medicationAlert || !now) return;
 
-    toggleMedicationComplete(medicationAlert.id);
-    dismissMedicationAlert();
+    const medication = medications.find(
+      (item) => item.id === medicationAlert.id
+    );
+
+    if (!medication) return;
+
+    if (medication.completedDates.includes(getDateKey(now))) {
+      dismissMedicationAlert();
+      return;
+    }
+
+    const saved = await toggleMedicationComplete(medicationAlert.id);
+
+    if (saved) {
+      dismissMedicationAlert();
+    }
   }
 
   const completedCount = todayMedications.filter(
@@ -1069,12 +1140,7 @@ export default function Home() {
       )}
 
       {activeTab === "analysis" && (
-        <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-[#172235] p-6">
-          <h1 className="text-2xl font-bold">복약 분석</h1>
-          <p className="mt-3 text-sm text-slate-400">
-            주간·월간 평균 복용 시각과 복약 기록을 준비하고 있습니다.
-          </p>
-        </div>
+        <MedicationAnalysis />
       )}
       <div
         className="mx-auto max-w-5xl"
