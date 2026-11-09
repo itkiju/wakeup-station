@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { verifyDeviceContext } from "@/lib/device-auth";
 
-export const dynamic = "force-dynamic";
 
 // ========================================
 // WakeUp Station Pro
