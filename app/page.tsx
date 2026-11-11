@@ -1,6 +1,8 @@
 
 "use client";
 
+import DeviceConnectionStatus from "./components/DeviceConnectionStatus";
+
 import DeviceRegistration from "@/components/DeviceRegistration";
 import MedicationAnalysis from "@/components/MedicationAnalysis";
 
@@ -1130,12 +1132,7 @@ export default function Home() {
             <PushNotificationButton />
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-[#172235] p-5">
-            <h2 className="text-lg font-semibold">스마트 약통 연결</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              ESP32 연결 기능은 추후 추가할 예정입니다.
-            </p>
-          </section>
+          <DeviceConnectionStatus variant="settings" />
         </div>
       )}
 
