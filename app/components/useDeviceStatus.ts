@@ -63,7 +63,7 @@ function subscribe(listener: () => void) {
   if (listeners.size === 1) {
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibility);
-    timer = setInterval(() => void refresh(), 5000);
+    timer = setInterval(() => void refresh(), 1000);
     void refresh();
   }
   return () => {
