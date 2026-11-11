@@ -1,5 +1,6 @@
 
 "use client";
+import DeviceStatusPanel from "./components/DeviceStatusPanel";
 
 import DeviceConnectionStatus from "./components/DeviceConnectionStatus";
 
@@ -1161,9 +1162,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
-            ● 하드웨어 연결 대기
-          </div>
+          <DeviceConnectionStatus variant="header" />
         </header>
 
         {/* 현재 시간 */}
@@ -1230,61 +1229,7 @@ export default function Home() {
         </section>
 
         {/* 약통 환경 모니터링 */}
-        <section className="mb-6 rounded-3xl border border-white/10 bg-[#172235] p-6 sm:p-8">
-
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-cyan-400">
-                ENVIRONMENT MONITORING
-              </p>
-
-              <h2 className="mt-1 text-xl font-semibold">
-                약통 내부 환경
-              </h2>
-            </div>
-
-            <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-400">
-              DHT11 연결 대기
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-
-            <div className="rounded-2xl bg-[#0b1220] p-5">
-              <p className="text-sm text-slate-400">
-                🌡️ 온도
-              </p>
-
-              <p className="mt-4 text-3xl font-semibold">
-                --.-<span className="text-lg text-slate-400"> °C</span>
-              </p>
-
-              <p className="mt-3 text-xs text-slate-500">
-                센서 데이터 대기 중
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-[#0b1220] p-5">
-              <p className="text-sm text-slate-400">
-                💧 습도
-              </p>
-
-              <p className="mt-4 text-3xl font-semibold">
-                --<span className="text-lg text-slate-400"> %</span>
-              </p>
-
-              <p className="mt-3 text-xs text-slate-500">
-                센서 데이터 대기 중
-              </p>
-            </div>
-
-          </div>
-
-          <p className="mt-5 text-xs text-slate-500">
-            약통 내부에 설치된 DHT11 센서로 온도와 습도를 측정할 예정입니다.
-          </p>
-
-        </section>
+        <DeviceStatusPanel />
 
         {/* 기상 알람 설정 */}
         <section className="mb-6 rounded-3xl border border-white/10 bg-[#172235] p-6 sm:p-8">
