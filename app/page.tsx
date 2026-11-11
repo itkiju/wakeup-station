@@ -1,10 +1,12 @@
 
 "use client";
 
+import DeviceConnectionStatus from "./components/DeviceConnectionStatus";
 import DeviceRegistration from "@/components/DeviceRegistration";
 import MedicationAnalysis from "@/components/MedicationAnalysis";
 
 import { useEffect, useRef, useState } from "react";
+import DeviceStatusPanel from "./components/DeviceStatusPanel";
 
 const weekDays = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -53,6 +55,24 @@ function isMedication(value: unknown): value is Medication {
 }
 
 
+
+type MedicationDelay = { minutes: number; until: string };
+
+function parseMedicationDelays(items: unknown): Record<string, MedicationDelay> {
+  const delays: Record<string, MedicationDelay> = {};
+  if (!Array.isArray(items)) return delays;
+  for (const value of items) {
+    if (!value || typeof value !== "object") continue;
+    const item = value as Record<string, unknown>;
+    const id = item.medication_id;
+    const until = item.delayed_until;
+    const minutes = Number(item.delay_minutes);
+    if (typeof id !== "string" || typeof until !== "string" ||
+        !Number.isFinite(Date.parse(until)) || ![5, 10, 15].includes(minutes)) continue;
+    delays[id] = { minutes, until };
+  }
+  return delays;
+}
 
 function PushNotificationButton() {
   const [permission, setPermission] = useState("default");
@@ -246,6 +266,8 @@ export default function Home() {
 
   // 복약 관리
   const [medications, setMedications] = useState<Medication[]>([]);
+  // 서버 DELAY 상태는 일정 데이터와 분리하여 저장한다.
+  const [medicationDelays, setMedicationDelays] = useState<Record<string, MedicationDelay>>({});
   const [newMedicationName, setNewMedicationName] = useState("");
   const [newMedicationTime, setNewMedicationTime] = useState("08:00");
   const [newMedicationDays, setNewMedicationDays] = useState<string[]>([
@@ -360,6 +382,7 @@ export default function Home() {
         }
 
         const result = await response.json();
+        if (!cancelled) setMedicationDelays(parseMedicationDelays(result.medications));
 
         if (!Array.isArray(result.medications)) {
           throw new Error("서버 복약 데이터 형식이 올바르지 않습니다.");
@@ -585,6 +608,7 @@ export default function Home() {
             const latest = await fetchServerData();
 
             if (cancelled) return;
+            setMedicationDelays(parseMedicationDelays(latest.medications));
 
             const serverMedications =
               convertServerMedications(latest.medications);
@@ -618,6 +642,8 @@ export default function Home() {
         const latest = await fetchServerData();
 
         if (cancelled) return;
+        // DELAY 종료/갱신은 일정 버전과 무관하게 매 조회마다 반영한다.
+        setMedicationDelays(parseMedicationDelays(latest.medications));
 
         const serverVersion = Number(latest.lastVersion);
 
@@ -726,11 +752,11 @@ export default function Home() {
       }>;
 
       const localText = medications.length
-        ? medications.map((item) => `${item.name} (${item.time})`).join("\\n")
+        ? medications.map((item) => `${item.name} (${item.time})`).join("\n")
         : "없음";
 
       const serverText = serverMedications.length
-        ? serverMedications.map((item) => `${item.name} (${item.time})`).join("\\n")
+        ? serverMedications.map((item) => `${item.name} (${item.time})`).join("\n")
         : "없음";
 
       const localIds = new Set(medications.map((item) => item.id));
@@ -743,10 +769,10 @@ export default function Home() {
         [...localIds].every((id) => serverIds.has(id));
 
       alert(
-        `📱 로컬 복약 일정 (${medications.length}개)\\n${localText}` +
-        `\\n\\n☁️ 서버 복약 일정 (${serverMedications.length}개)\\n${serverText}` +
-        `\\n\\n${sameIds ? "일정 ID 일치" : "⚠️ 로컬과 서버의 일정 ID가 다릅니다."}` +
-        "\\n\n이 화면에서는 데이터를 변경하지 않습니다."
+        `📱 로컬 복약 일정 (${medications.length}개)\n${localText}` +
+        `\n\n☁️ 서버 복약 일정 (${serverMedications.length}개)\n${serverText}` +
+        `\n\n${sameIds ? "일정 ID 일치" : "⚠️ 로컬과 서버의 일정 ID가 다릅니다."}` +
+        "\n\n이 화면에서는 데이터를 변경하지 않습니다."
       );
     } catch (error) {
       console.error("복약 일정 비교 실패:", error);
@@ -1012,6 +1038,7 @@ export default function Home() {
       return (
         item.days.includes(day) &&
         item.time === timeKey &&
+        !(medicationDelays[item.id] && Date.parse(medicationDelays[item.id].until) > now.getTime()) &&
         !item.completedDates.includes(todayKey) &&
         !dismissedAlerts.includes(alertKey)
       );
@@ -1020,7 +1047,15 @@ export default function Home() {
     if (medication) {
       setMedicationAlert(medication);
     }
-  }, [now, medications, isLoaded, medicationAlert, dismissedAlerts]);
+  }, [now, medications, medicationDelays, isLoaded, medicationAlert, dismissedAlerts]);
+
+  useEffect(() => {
+    if (medicationAlert && now &&
+        medicationDelays[medicationAlert.id] &&
+        Date.parse(medicationDelays[medicationAlert.id].until) > now.getTime()) {
+      setMedicationAlert(null);
+    }
+  }, [medicationAlert, medicationDelays, now]);
 
   function dismissMedicationAlert() {
     if (!medicationAlert || !now) return;
@@ -1130,12 +1165,7 @@ export default function Home() {
             <PushNotificationButton />
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-[#172235] p-5">
-            <h2 className="text-lg font-semibold">스마트 약통 연결</h2>
-            <p className="mt-2 text-sm text-slate-400">
-              ESP32 연결 기능은 추후 추가할 예정입니다.
-            </p>
-          </section>
+          <DeviceConnectionStatus variant="settings" />
         </div>
       )}
 
@@ -1164,9 +1194,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="rounded-full border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-sm text-amber-400">
-            ● 하드웨어 연결 대기
-          </div>
+          <DeviceConnectionStatus variant="header" />
         </header>
 
         {/* 현재 시간 */}
@@ -1216,80 +1244,14 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#172235] p-5">
-            <p className="text-sm text-slate-400">
-              약통 상태
-            </p>
-
-            <p className="mt-3 text-3xl font-semibold">
-              연결 대기
-            </p>
-
-            <p className="mt-2 text-xs text-slate-500">
-              리드 스위치 연결 전
-            </p>
-          </div>
+          <DeviceConnectionStatus variant="card" />
 
         </section>
 
         {/* 약통 환경 모니터링 */}
-        <section className="mb-6 rounded-3xl border border-white/10 bg-[#172235] p-6 sm:p-8">
+          <DeviceStatusPanel />
 
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm text-cyan-400">
-                ENVIRONMENT MONITORING
-              </p>
-
-              <h2 className="mt-1 text-xl font-semibold">
-                약통 내부 환경
-              </h2>
-            </div>
-
-            <span className="rounded-full bg-amber-500/10 px-3 py-1 text-xs text-amber-400">
-              DHT11 연결 대기
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-
-            <div className="rounded-2xl bg-[#0b1220] p-5">
-              <p className="text-sm text-slate-400">
-                🌡️ 온도
-              </p>
-
-              <p className="mt-4 text-3xl font-semibold">
-                --.-<span className="text-lg text-slate-400"> °C</span>
-              </p>
-
-              <p className="mt-3 text-xs text-slate-500">
-                센서 데이터 대기 중
-              </p>
-            </div>
-
-            <div className="rounded-2xl bg-[#0b1220] p-5">
-              <p className="text-sm text-slate-400">
-                💧 습도
-              </p>
-
-              <p className="mt-4 text-3xl font-semibold">
-                --<span className="text-lg text-slate-400"> %</span>
-              </p>
-
-              <p className="mt-3 text-xs text-slate-500">
-                센서 데이터 대기 중
-              </p>
-            </div>
-
-          </div>
-
-          <p className="mt-5 text-xs text-slate-500">
-            약통 내부에 설치된 DHT11 센서로 온도와 습도를 측정할 예정입니다.
-          </p>
-
-        </section>
-
-        {/* 기상 알람 설정 */}
+          {/* 기상 알람 설정 */}
         <section className="mb-6 rounded-3xl border border-white/10 bg-[#172235] p-6 sm:p-8">
 
           <div className="mb-6 flex items-center justify-between">
@@ -1621,6 +1583,13 @@ export default function Home() {
 
                   const completed =
                     medication.completedDates.includes(today);
+                  const delay = medicationDelays[medication.id];
+                  const remainingMs = delay && now
+                    ? Date.parse(delay.until) - now.getTime()
+                    : 0;
+                  const delayActive = !completed && remainingMs > 0;
+                  const remainingSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+                  const delayCountdown = `${String(Math.floor(remainingSeconds / 60)).padStart(2, "0")}:${String(remainingSeconds % 60).padStart(2, "0")}`;
 
                   return (
                     <div
@@ -1644,8 +1613,16 @@ export default function Home() {
                             ? "text-emerald-400"
                             : "text-amber-400"
                         }`}>
-                          {completed ? "✓ 복용 완료" : "복용 예정"}
+                          {completed ? "✓ 복용 완료" : delayActive ? "⏳ 복용 연기 중" : "복용 예정"}
                         </p>
+                        {delayActive && delay && (
+                          <div className="mt-2 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+                            <p className="font-semibold">{delay.minutes}분 연기 · 재알림까지 {delayCountdown}</p>
+                            <p className="mt-1 text-amber-100/80">
+                              재알림 {new Date(delay.until).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}
+                            </p>
+                          </div>
+                        )}
                       </div>
 
                       {/* 일정 관리 버튼 */}
