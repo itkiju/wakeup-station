@@ -5,7 +5,6 @@ import { getDatabase } from "@/lib/db";
 export async function GET(request: Request) {
   try {
     const authorization = request.headers.get("authorization");
-
     const token = authorization?.startsWith("Bearer ")
       ? authorization.slice(7)
       : null;
@@ -23,14 +22,22 @@ export async function GET(request: Request) {
 
     const medications = await sql`
       SELECT
-        medication_id,
-        name,
-        time,
-        days,
-        completed_dates
-      FROM medication_group_schedules
-      WHERE sync_group_id = ${context.syncGroupId}::uuid
-      ORDER BY time, name
+        s.medication_id,
+        s.name,
+        s.time,
+        s.days,
+        s.completed_dates,
+        d.delay_minutes,
+        d.delayed_until
+      FROM medication_group_schedules s
+      LEFT JOIN medication_delays d
+        ON d.sync_group_id = s.sync_group_id
+        AND d.medication_id = s.medication_id
+        AND d.scheduled_date =
+          (NOW() AT TIME ZONE 'Asia/Seoul')::date
+        AND d.delayed_until > NOW()
+      WHERE s.sync_group_id = ${context.syncGroupId}::uuid
+      ORDER BY s.time, s.name
     `;
 
     const versions = await sql`
