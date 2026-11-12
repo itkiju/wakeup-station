@@ -8,6 +8,7 @@ import DeviceRegistration from "@/components/DeviceRegistration";
 import MedicationAnalysis from "@/components/MedicationAnalysis";
 
 import { useEffect, useRef, useState } from "react";
+import { resolveMedicationReminderTime, isMedicationReminderDue } from "@/lib/medication-reminder-time";
 
 const weekDays = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -17,6 +18,7 @@ type Medication = {
   time: string;
   days: string[];
   completedDates: string[];
+  medicationGroupId?: string;
 };
 
 function getDateKey(date: Date) {
@@ -46,6 +48,10 @@ function isMedication(value: unknown): value is Medication {
     item.days.every(
       (day) => typeof day === "string" && weekDays.includes(day)
     ) &&
+    (item.medicationGroupId === undefined ||
+      (typeof item.medicationGroupId === "string" &&
+        item.medicationGroupId.length > 0 &&
+        item.medicationGroupId.length <= 100)) &&
     Array.isArray(item.completedDates) &&
     item.completedDates.every(
       (date) =>
@@ -258,6 +264,7 @@ export default function Home() {
   // 복약 일정 수정
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
   const [editMedicationName, setEditMedicationName] = useState("");
+  const [editMedicationLinkId, setEditMedicationLinkId] = useState("");
   const [editMedicationTime, setEditMedicationTime] = useState("08:00");
   const [editMedicationDays, setEditMedicationDays] = useState<string[]>([]);
 
@@ -277,8 +284,22 @@ export default function Home() {
   // MEDICATION ALERT FEATURE
   const [medicationAlert, setMedicationAlert] =
     useState<Medication | null>(null);
+  const [activeMedicationAlertKey, setActiveMedicationAlertKey] =
+    useState<string | null>(null);
   const [dismissedAlerts, setDismissedAlerts] =
     useState<string[]>([]);
+
+  // 서버에서 계산한 자동 보정 및 K4 지연 알림 정보
+  // 복약 일정과 분리하여 기존 1초 동기화에 영향을 주지 않는다.
+  const [serverReminderTimes, setServerReminderTimes] = useState<
+    Record<string, {
+      adjustedAt: string | null;
+      delayedUntil: string | null;
+    }>
+  >({});
+
+  const [isReminderDataReady, setIsReminderDataReady] =
+    useState(false);
 
 
   // 현재 시간 업데이트
@@ -375,6 +396,10 @@ export default function Home() {
             time: item.time,
             days: item.days,
             completedDates: item.completed_dates,
+            ...(typeof item.medication_group_id === "string" &&
+              item.medication_group_id.length > 0
+              ? { medicationGroupId: item.medication_group_id }
+              : {}),
           }));
 
         if (!serverMedications.every(isMedication)) {
@@ -511,6 +536,10 @@ export default function Home() {
         time: item.time,
         days: item.days,
         completedDates: item.completed_dates,
+        ...(typeof item.medication_group_id === "string" &&
+          item.medication_group_id.length > 0
+          ? { medicationGroupId: item.medication_group_id }
+          : {}),
       }));
 
       if (!converted.every(isMedication)) {
@@ -779,6 +808,13 @@ export default function Home() {
   function startEditMedication(medication: Medication) {
     setEditingMedicationId(medication.id);
     setEditMedicationName(medication.name);
+    const linkedMedication = medications.find(
+      (item) =>
+        item.id !== medication.id &&
+        medication.medicationGroupId !== undefined &&
+        item.medicationGroupId === medication.medicationGroupId
+    );
+    setEditMedicationLinkId(linkedMedication?.id ?? "");
     setEditMedicationTime(medication.time);
     setEditMedicationDays([...medication.days]);
   }
@@ -804,18 +840,73 @@ export default function Home() {
       return;
     }
 
-    setMedications((prev) =>
-      prev.map((medication) =>
-        medication.id === editingMedicationId
-          ? {
-              ...medication,
-              name: editMedicationName.trim(),
-              time: editMedicationTime,
-              days: editMedicationDays,
-            }
-          : medication
-      )
-    );
+    if (!editingMedicationId) return;
+
+    setMedications((prev) => {
+      const current = prev.find(
+        (item) => item.id === editingMedicationId
+      );
+
+      if (!current) return prev;
+
+      const target = prev.find(
+        (item) => item.id === editMedicationLinkId
+      );
+
+      const oldGroupId = current.medicationGroupId;
+
+      if (!target) {
+        return prev.map((item) =>
+          item.id === editingMedicationId
+            ? {
+                ...item,
+                name: editMedicationName.trim(),
+                time: editMedicationTime,
+                days: [...editMedicationDays],
+                medicationGroupId: undefined,
+              }
+            : item
+        );
+      }
+
+      const newGroupId =
+        target.medicationGroupId ||
+        current.medicationGroupId ||
+        crypto.randomUUID();
+
+      return prev.map((item) => {
+        const belongsToTargetGroup =
+          target.medicationGroupId !== undefined &&
+          item.medicationGroupId === target.medicationGroupId;
+
+        const belongsToCurrentGroup =
+          oldGroupId !== undefined &&
+          item.medicationGroupId === oldGroupId;
+
+        if (item.id === editingMedicationId) {
+          return {
+            ...item,
+            name: editMedicationName.trim(),
+            time: editMedicationTime,
+            days: [...editMedicationDays],
+            medicationGroupId: newGroupId,
+          };
+        }
+
+        if (
+          item.id === target.id ||
+          belongsToTargetGroup ||
+          belongsToCurrentGroup
+        ) {
+          return {
+            ...item,
+            medicationGroupId: newGroupId,
+          };
+        }
+
+        return item;
+      });
+    });
 
     setEditingMedicationId(null);
   }
@@ -999,39 +1090,168 @@ export default function Home() {
     .sort((a, b) => a.time.localeCompare(b.time));
 
 
-  // 설정된 복용 시간이 되면 앱 내부 알림 표시
+  // 서버의 자동 보정 시간 및 K4 지연 정보를 별도로 조회한다.
   useEffect(() => {
-    if (!now || !isLoaded || medicationAlert) return;
+    if (!isLoaded || !isSyncReady) return;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    async function refreshReminderTimes() {
+      if (inFlight) return;
+
+      const deviceToken = localStorage.getItem(
+        "wakeup-station-device-token"
+      );
+
+      if (!deviceToken) {
+        setIsReminderDataReady(false);
+        return;
+      }
+
+      inFlight = true;
+
+      try {
+        const response = await fetch("/api/medications/preview", {
+          headers: {
+            Authorization: `Bearer ${deviceToken}`,
+          },
+          cache: "no-store",
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            `알림 시간 조회 실패: HTTP ${response.status}`
+          );
+        }
+
+        const result = await response.json();
+
+        if (!Array.isArray(result.medications)) {
+          throw new Error("알림 데이터 형식 오류");
+        }
+
+        const nextTimes: Record<string, {
+          adjustedAt: string | null;
+          delayedUntil: string | null;
+        }> = {};
+
+        for (const item of result.medications) {
+          const id = String(item.medication_id);
+
+          nextTimes[id] = {
+            adjustedAt:
+              typeof item.adjusted_reminder_at === "string"
+                ? item.adjusted_reminder_at
+                : null,
+            delayedUntil:
+              typeof item.delayed_until === "string"
+                ? item.delayed_until
+                : null,
+          };
+        }
+
+        if (cancelled) return;
+
+        setServerReminderTimes(nextTimes);
+        setIsReminderDataReady(true);
+      } catch (error) {
+        if (cancelled) return;
+
+        console.error("알림 시간 동기화 실패:", error);
+        setIsReminderDataReady(false);
+      } finally {
+        inFlight = false;
+      }
+    }
+
+    void refreshReminderTimes();
+
+    const timer = window.setInterval(() => {
+      void refreshReminderTimes();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [isLoaded, isSyncReady]);
+
+  // K4 지연 > 자동 보정 > 기존 복약 시간 순서로 알림 표시
+  useEffect(() => {
+    if (
+      !now ||
+      !isLoaded ||
+      !isReminderDataReady ||
+      medicationAlert
+    ) {
+      return;
+    }
 
     const todayKey = getDateKey(now);
     const currentHour = String(now.getHours()).padStart(2, "0");
     const currentMinute = String(now.getMinutes()).padStart(2, "0");
     const timeKey = `${currentHour}:${currentMinute}`;
 
+    let nextAlertKey: string | null = null;
+
     const medication = medications.find((item) => {
       const day = weekDays[(now.getDay() + 6) % 7];
-      const alertKey = `${todayKey}-${item.id}-${item.time}`;
+      const reminder = serverReminderTimes[item.id];
 
-      return (
+      // 서버 데이터에 해당 약이 없다면 알림을 보류한다.
+      if (!reminder) return false;
+
+      const resolved = resolveMedicationReminderTime({
+        originalTime: item.time,
+        adjustedAt: reminder.adjustedAt,
+        delayedUntil: reminder.delayedUntil,
+        now,
+        serverReady: isReminderDataReady,
+        completed: item.completedDates.includes(todayKey),
+      });
+
+      const alertKey =
+        `${todayKey}-${item.id}-${resolved.source}-${resolved.time}`;
+
+      const shouldAlert =
         item.days.includes(day) &&
-        item.time === timeKey &&
-        !item.completedDates.includes(todayKey) &&
-        !dismissedAlerts.includes(alertKey)
-      );
+        isMedicationReminderDue(resolved.time, now) &&
+        !dismissedAlerts.includes(alertKey);
+
+      if (shouldAlert) {
+        nextAlertKey = alertKey;
+      }
+
+      return shouldAlert;
     });
 
-    if (medication) {
+    if (medication && nextAlertKey) {
+      setActiveMedicationAlertKey(nextAlertKey);
       setMedicationAlert(medication);
     }
-  }, [now, medications, isLoaded, medicationAlert, dismissedAlerts]);
+  }, [
+    now,
+    medications,
+    isLoaded,
+    isReminderDataReady,
+    medicationAlert,
+    dismissedAlerts,
+    serverReminderTimes,
+  ]);
 
   function dismissMedicationAlert() {
     if (!medicationAlert || !now) return;
 
-    const alertKey =
-      `${getDateKey(now)}-${medicationAlert.id}-${medicationAlert.time}`;
+    if (activeMedicationAlertKey) {
+      setDismissedAlerts((prev) =>
+        prev.includes(activeMedicationAlertKey)
+          ? prev
+          : [...prev, activeMedicationAlertKey]
+      );
+    }
 
-    setDismissedAlerts((prev) => [...prev, alertKey]);
+    setActiveMedicationAlertKey(null);
     setMedicationAlert(null);
   }
 
@@ -1212,19 +1432,7 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-[#172235] p-5">
-            <p className="text-sm text-slate-400">
-              약통 상태
-            </p>
-
-            <p className="mt-3 text-3xl font-semibold">
-              연결 대기
-            </p>
-
-            <p className="mt-2 text-xs text-slate-500">
-              리드 스위치 연결 전
-            </p>
-          </div>
+          <DeviceConnectionStatus variant="card" />
 
         </section>
 
@@ -1477,6 +1685,25 @@ export default function Home() {
                             className="mb-4 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white"
                           />
 
+
+                            <label className="mb-2 block text-sm text-slate-400">
+                              같은 약 연결
+                            </label>
+                            <select
+                              value={editMedicationLinkId}
+                              onChange={(e) => setEditMedicationLinkId(e.target.value)}
+                              className="mb-4 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white"
+                            >
+                              <option value="">연결하지 않음</option>
+                              {medications
+                                .filter((item) => item.id !== editingMedicationId)
+                                .map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name} ({item.time})
+                                  </option>
+                                ))}
+                            </select>
+
                           <label className="mb-2 block text-sm text-slate-400">
                             복용 시간
                           </label>
@@ -1649,6 +1876,25 @@ export default function Home() {
                             }
                             className="mb-4 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white outline-none focus:border-cyan-400"
                           />
+
+
+                            <label className="mb-2 block text-sm text-slate-400">
+                              같은 약 연결
+                            </label>
+                            <select
+                              value={editMedicationLinkId}
+                              onChange={(e) => setEditMedicationLinkId(e.target.value)}
+                              className="mb-4 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white"
+                            >
+                              <option value="">연결하지 않음</option>
+                              {medications
+                                .filter((item) => item.id !== editingMedicationId)
+                                .map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.name} ({item.time})
+                                  </option>
+                                ))}
+                            </select>
 
                           <label className="mb-2 block text-sm text-slate-400">
                             복용 시간

@@ -10,6 +10,7 @@ type MedicationInput = {
   time: string;
   days: string[];
   completedDates: string[];
+  medicationGroupId?: string;
 };
 
 function isMedication(value: unknown): value is MedicationInput {
@@ -31,6 +32,10 @@ function isMedication(value: unknown): value is MedicationInput {
     item.days.every(
       (day) => typeof day === "string" && validDays.includes(day)
     ) &&
+    (item.medicationGroupId === undefined ||
+      (typeof item.medicationGroupId === 'string' &&
+       item.medicationGroupId.length > 0 &&
+       item.medicationGroupId.length <= 100)) &&
     Array.isArray(item.completedDates) &&
     item.completedDates.every(
       (date) =>
@@ -116,6 +121,7 @@ export async function POST(request: Request) {
       time: medication.time,
       days: medication.days,
       completed_dates: medication.completedDates,
+      medication_group_id: medication.medicationGroupId ?? null,
     }));
 
     const sql = getDatabase();
