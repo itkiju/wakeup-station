@@ -19,6 +19,7 @@ type Medication = {
   days: string[];
   completedDates: string[];
   medicationGroupId?: string;
+  slotNumber?: number;
 };
 
 function getDateKey(date: Date) {
@@ -48,6 +49,7 @@ function isMedication(value: unknown): value is Medication {
     item.days.every(
       (day) => typeof day === "string" && weekDays.includes(day)
     ) &&
+    (item.slotNumber === undefined || (Number.isInteger(item.slotNumber) && (item.slotNumber as number) >= 1 && (item.slotNumber as number) <= 6)) &&
     (item.medicationGroupId === undefined ||
       (typeof item.medicationGroupId === "string" &&
         item.medicationGroupId.length > 0 &&
@@ -257,6 +259,7 @@ export default function Home() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [newMedicationName, setNewMedicationName] = useState("");
   const [newMedicationTime, setNewMedicationTime] = useState("08:00");
+  const [newMedicationSlot, setNewMedicationSlot] = useState(1);
   const [newMedicationDays, setNewMedicationDays] = useState<string[]>([
     "월", "화", "수", "목", "금", "토", "일",
   ]);
@@ -266,6 +269,7 @@ export default function Home() {
   const [editMedicationName, setEditMedicationName] = useState("");
   const [editMedicationLinkId, setEditMedicationLinkId] = useState("");
   const [editMedicationTime, setEditMedicationTime] = useState("08:00");
+  const [editMedicationSlot, setEditMedicationSlot] = useState(1);
   const [editMedicationDays, setEditMedicationDays] = useState<string[]>([]);
 
   const [isLoaded, setIsLoaded] = useState(false);
@@ -396,6 +400,7 @@ export default function Home() {
             time: item.time,
             days: item.days,
             completedDates: item.completed_dates,
+            ...(Number.isInteger(item.slot_number) && Number(item.slot_number) >= 1 && Number(item.slot_number) <= 6 ? { slotNumber: Number(item.slot_number) } : {}),
             ...(typeof item.medication_group_id === "string" &&
               item.medication_group_id.length > 0
               ? { medicationGroupId: item.medication_group_id }
@@ -536,6 +541,7 @@ export default function Home() {
         time: item.time,
         days: item.days,
         completedDates: item.completed_dates,
+        ...(Number.isInteger(item.slot_number) && Number(item.slot_number) >= 1 && Number(item.slot_number) <= 6 ? { slotNumber: Number(item.slot_number) } : {}),
         ...(typeof item.medication_group_id === "string" &&
           item.medication_group_id.length > 0
           ? { medicationGroupId: item.medication_group_id }
@@ -816,6 +822,7 @@ export default function Home() {
     );
     setEditMedicationLinkId(linkedMedication?.id ?? "");
     setEditMedicationTime(medication.time);
+    setEditMedicationSlot(medication.slotNumber ?? 1);
     setEditMedicationDays([...medication.days]);
   }
 
@@ -863,6 +870,7 @@ export default function Home() {
                 name: editMedicationName.trim(),
                 time: editMedicationTime,
                 days: [...editMedicationDays],
+                slotNumber: editMedicationSlot,
                 medicationGroupId: undefined,
               }
             : item
@@ -889,6 +897,7 @@ export default function Home() {
             name: editMedicationName.trim(),
             time: editMedicationTime,
             days: [...editMedicationDays],
+            slotNumber: editMedicationSlot,
             medicationGroupId: newGroupId,
           };
         }
@@ -934,6 +943,7 @@ export default function Home() {
       time: newMedicationTime,
       days: newMedicationDays,
       completedDates: [],
+      slotNumber: newMedicationSlot,
     };
 
     if (!isMedicationDataValid && !isNewDevice) {
@@ -959,6 +969,7 @@ export default function Home() {
 
     setNewMedicationName("");
     setNewMedicationTime("08:00");
+    setNewMedicationSlot(1);
     setNewMedicationDays(weekDays);
   }
 
@@ -1583,6 +1594,7 @@ export default function Home() {
               />
             </div>
 
+            <div className="mb-5"><label className="mb-2 block text-sm text-slate-400">약통 칸 (1~6)</label><select value={newMedicationSlot} onChange={(e) => setNewMedicationSlot(Number(e.target.value))} className="w-full rounded-xl border border-white/10 bg-[#172235] px-4 py-3 text-white">{[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}번 칸</option>)}</select></div>
             <div className="mb-6">
               <p className="mb-3 text-sm text-slate-400">
                 복용 요일
@@ -1714,6 +1726,7 @@ export default function Home() {
                             className="mb-5 block box-border w-full min-w-0 max-w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-base text-white"
                           />
 
+                          <div className="mb-4"><label className="mb-2 block text-sm text-slate-400">약통 칸 (1~6)</label><select value={editMedicationSlot} onChange={(e) => setEditMedicationSlot(Number(e.target.value))} className="w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white">{[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}번 칸</option>)}</select></div>
                           <p className="mb-3 text-sm text-slate-400">
                             복용 요일
                           </p>
@@ -1909,6 +1922,7 @@ export default function Home() {
                             className="mb-5 w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white outline-none focus:border-cyan-400 block box-border min-w-0 max-w-full text-base"
                           />
 
+                          <div className="mb-4"><label className="mb-2 block text-sm text-slate-400">약통 칸 (1~6)</label><select value={editMedicationSlot} onChange={(e) => setEditMedicationSlot(Number(e.target.value))} className="w-full rounded-xl border border-white/10 bg-[#0b1220] px-4 py-3 text-white">{[1,2,3,4,5,6].map((n) => <option key={n} value={n}>{n}번 칸</option>)}</select></div>
                           <p className="mb-3 text-sm text-slate-400">
                             복용 요일
                           </p>

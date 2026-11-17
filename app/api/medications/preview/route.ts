@@ -57,6 +57,7 @@ export async function GET(request: Request) {
         s.days,
         s.completed_dates,
         s.medication_group_id,
+        s.slot_number,
         d.delay_minutes,
         d.delayed_until
       FROM medication_group_schedules s
