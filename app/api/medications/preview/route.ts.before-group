@@ -1,0 +1,51 @@
+import { NextResponse } from "next/server";
+import { verifyDeviceToken } from "@/lib/device-auth";
+import { getDatabase } from "@/lib/db";
+
+export async function GET(request: Request) {
+  try {
+    const authorization = request.headers.get("authorization");
+
+    const token = authorization?.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : null;
+
+    const deviceId = await verifyDeviceToken(token);
+
+    if (!deviceId) {
+      return NextResponse.json(
+        { error: "등록되지 않은 기기입니다." },
+        { status: 401 }
+      );
+    }
+
+    const sql = getDatabase();
+
+    const medications = await sql`
+      SELECT medication_id, name, time
+      FROM medication_schedules
+      WHERE device_id = ${deviceId}::uuid
+      ORDER BY time, name
+    `;
+
+    return NextResponse.json({
+      success: true,
+      medications,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "digest" in error &&
+      error.digest === "NEXT_PRERENDER_INTERRUPTED"
+    ) {
+      throw error;
+    }
+
+    console.error("서버 복약 일정 조회 실패");
+
+    return NextResponse.json(
+      { error: "서버 복약 일정을 조회하지 못했습니다." },
+      { status: 500 }
+    );
+  }
+}

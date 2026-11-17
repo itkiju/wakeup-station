@@ -1,0 +1,65 @@
+import { NextResponse } from "next/server";
+import { verifyDeviceToken } from "@/lib/device-auth";
+import { getDatabase } from "@/lib/db";
+
+export async function GET(request: Request) {
+  try {
+    const authorization = request.headers.get("authorization");
+
+    const token = authorization?.startsWith("Bearer ")
+      ? authorization.slice(7)
+      : null;
+
+    const deviceId = await verifyDeviceToken(token);
+
+    if (!deviceId) {
+      return NextResponse.json(
+        { error: "등록되지 않은 기기입니다." },
+        { status: 401 }
+      );
+    }
+
+    const sql = getDatabase();
+
+    const result = await sql`
+      SELECT last_version
+      FROM medication_sync_versions
+      WHERE device_id = ${deviceId}::uuid
+      LIMIT 1
+    `;
+
+    const lastVersion =
+      result.length > 0 ? Number(result[0].last_version) : 0;
+
+    const medicationCountResult = await sql`
+      SELECT COUNT(*)::int AS count
+      FROM medication_schedules
+      WHERE device_id = ${deviceId}::uuid
+    `;
+
+    const medicationCount = Number(
+      medicationCountResult[0].count
+    );
+
+    return NextResponse.json({
+      success: true,
+      lastVersion,
+      medicationCount,
+    });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      "digest" in error &&
+      error.digest === "NEXT_PRERENDER_INTERRUPTED"
+    ) {
+      throw error;
+    }
+
+    console.error("동기화 버전 조회 실패:", error);
+
+    return NextResponse.json(
+      { error: "동기화 버전을 조회하지 못했습니다." },
+      { status: 500 }
+    );
+  }
+}

@@ -1,0 +1,59 @@
+export type MedicationTimingStatus =
+  | "early"
+  | "on_time"
+  | "late"
+  | "missed";
+
+export type MedicationTimingResult = {
+  status: MedicationTimingStatus;
+  differenceMinutes: number;
+  shouldAdjustNextDose: boolean;
+};
+
+const ON_TIME_WINDOW_MS = 5 * 60 * 1000;
+const MISSED_WINDOW_MS = 3 * 60 * 60 * 1000;
+
+export function classifyMedicationTiming(
+  scheduledAt: Date,
+  actualAt: Date
+): MedicationTimingResult {
+  const scheduled = scheduledAt.getTime();
+  const actual = actualAt.getTime();
+
+  if (!Number.isFinite(scheduled) || !Number.isFinite(actual)) {
+    throw new Error("Invalid medication timestamp");
+  }
+
+  const differenceMs = actual - scheduled;
+  const differenceMinutes = differenceMs / 60000;
+
+  if (differenceMs < -ON_TIME_WINDOW_MS) {
+    return {
+      status: "early",
+      differenceMinutes,
+      shouldAdjustNextDose: false,
+    };
+  }
+
+  if (differenceMs <= ON_TIME_WINDOW_MS) {
+    return {
+      status: "on_time",
+      differenceMinutes,
+      shouldAdjustNextDose: false,
+    };
+  }
+
+  if (differenceMs <= MISSED_WINDOW_MS) {
+    return {
+      status: "late",
+      differenceMinutes,
+      shouldAdjustNextDose: true,
+    };
+  }
+
+  return {
+    status: "missed",
+    differenceMinutes,
+    shouldAdjustNextDose: false,
+  };
+}
