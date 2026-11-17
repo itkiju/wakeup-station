@@ -29,8 +29,11 @@ export async function GET(request: Request) {
         t.temperature,
         t.humidity,
         t.lid_open,
-        t.updated_at
+        t.updated_at,
+        a.active AS humidity_warning,
+        a.high_since AS humidity_high_since
       FROM device_telemetry AS t
+      LEFT JOIN device_humidity_alerts AS a ON a.device_id = t.device_id
       INNER JOIN device_registrations AS d
         ON d.id = t.device_id
       WHERE d.sync_group_id = ${context.syncGroupId}::uuid
@@ -46,6 +49,8 @@ export async function GET(request: Request) {
           connected: false,
           temperature: null,
           humidity: null,
+          humidityWarning: false,
+          humidityHighSince: null,
           lidOpen: null,
           lastSeen: null,
         },
@@ -70,6 +75,8 @@ export async function GET(request: Request) {
         connected,
         temperature: Number(latest.temperature),
         humidity: Number(latest.humidity),
+        humidityWarning: latest.humidity_warning === true,
+        humidityHighSince: latest.humidity_high_since ? new Date(latest.humidity_high_since).toISOString() : null,
         lidOpen: latest.lid_open,
         lastSeen: lastSeen.toISOString(),
       },

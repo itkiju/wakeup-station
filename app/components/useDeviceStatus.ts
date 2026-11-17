@@ -7,6 +7,8 @@ export type DeviceStatus = {
   connected: boolean;
   temperature: number | null;
   humidity: number | null;
+  humidityWarning: boolean;
+  humidityHighSince: string | null;
   lidOpen: boolean | null;
   lastSeen: string | null;
 };

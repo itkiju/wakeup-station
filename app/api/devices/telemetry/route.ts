@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { verifyDeviceContext } from "@/lib/device-auth";
 import { getDatabase } from "@/lib/db";
+import * as webpush from "web-push";
 
 // ========================================
 // WakeUp Station Pro
@@ -87,6 +88,90 @@ export async function POST(request: Request) {
         lid_open = EXCLUDED.lid_open,
         updated_at = NOW()
     `;
+
+    // 5. 습도 경고 상태는 DB에 유지해 서버리스 요청 사이에도 누적합니다.
+    // >=60% 5분 지속 시 경고, <55% 5분 지속 시 해제.
+    const warningRows = await sql`
+      INSERT INTO device_humidity_alerts (
+        device_id, high_since, recovery_since, active, updated_at
+      ) VALUES (
+        ${context.deviceId}::uuid,
+        CASE WHEN ${humidity} >= 60 THEN NOW() ELSE NULL END,
+        CASE WHEN ${humidity} < 55 THEN NOW() ELSE NULL END,
+        FALSE, NOW()
+      )
+      ON CONFLICT (device_id) DO UPDATE SET
+        high_since = CASE
+          WHEN ${humidity} >= 60 THEN COALESCE(device_humidity_alerts.high_since, NOW())
+          ELSE NULL END,
+        recovery_since = CASE
+          WHEN ${humidity} < 55 THEN COALESCE(device_humidity_alerts.recovery_since, NOW())
+          ELSE NULL END,
+        active = CASE
+          WHEN device_humidity_alerts.active
+            AND ${humidity} < 55
+            AND device_humidity_alerts.recovery_since <= NOW() - INTERVAL '5 minutes'
+            THEN FALSE
+          WHEN NOT device_humidity_alerts.active
+            AND ${humidity} >= 60
+            AND device_humidity_alerts.high_since <= NOW() - INTERVAL '5 minutes'
+            THEN TRUE
+          ELSE device_humidity_alerts.active END,
+        updated_at = NOW()
+      RETURNING active, (active AND notified_at IS NULL) AS needs_notification
+    `;
+
+    const warningActive = warningRows[0]?.active === true;
+    if (warningActive && warningRows[0]?.needs_notification === true) {
+      // 알림 중복 방지: 동시에 수신된 요청 중 한 요청만 전송 담당.
+      const claimed = await sql`
+        UPDATE device_humidity_alerts
+        SET notified_at = NOW()
+        WHERE device_id = ${context.deviceId}::uuid
+          AND active = TRUE AND notified_at IS NULL
+        RETURNING device_id
+      `;
+      if (claimed.length > 0) {
+        try {
+          const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+          const privateKey = process.env.VAPID_PRIVATE_KEY;
+          const subject = process.env.VAPID_SUBJECT;
+          if (!publicKey || !privateKey || !subject) {
+            throw new Error("VAPID configuration missing");
+          }
+          webpush.setVapidDetails(subject, publicKey, privateKey);
+          const subscriptions = await sql`
+            SELECT p.endpoint, p.p256dh, p.auth
+            FROM push_subscriptions p
+            JOIN device_registrations d ON d.id = p.device_id
+            WHERE d.sync_group_id = ${context.syncGroupId}::uuid
+              AND d.revoked_at IS NULL
+          `;
+          const payload = JSON.stringify({
+            title: "⚠️ WakeUp Station Pro 습도 경고",
+            body: "약통 내부 습도가 높습니다. 서늘하고 건조한 곳으로 옮기고 약품별 보관 지침을 확인하세요.",
+            url: "/",
+            tag: "humidity-warning",
+          });
+          await Promise.allSettled(subscriptions.map((sub) =>
+            webpush.sendNotification({
+              endpoint: String(sub.endpoint),
+              keys: { p256dh: String(sub.p256dh), auth: String(sub.auth) },
+            }, payload)
+          ));
+        } catch (pushError) {
+          console.error("Humidity push dispatch failed:", pushError);
+        }
+      }
+    }
+    if (!warningActive) {
+      // 정상 복귀 후에는 다음 경고 시 다시 알림을 보낼 수 있도록 초기화.
+      await sql`
+        UPDATE device_humidity_alerts
+        SET notified_at = NULL
+        WHERE device_id = ${context.deviceId}::uuid AND active = FALSE
+      `;
+    }
 
     // 5. 저장 성공 응답
     return NextResponse.json(

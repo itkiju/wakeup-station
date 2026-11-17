@@ -21,9 +21,9 @@ self.addEventListener("push", (event) => {
     body: data.body || "복용 시간을 확인해 주세요.",
     icon: "/icon-192.png",
     badge: "/icon-192.png",
-    tag: "medication-reminder",
+    tag: data.tag || "medication-reminder",
     data: {
-      url: "/",
+      url: data.url || "/",
     },
   };
 
@@ -36,6 +36,6 @@ self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 
   event.waitUntil(
-    self.clients.openWindow("/")
+    self.clients.openWindow(event.notification.data?.url || "/")
   );
 });
