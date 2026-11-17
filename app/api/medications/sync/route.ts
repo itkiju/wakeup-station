@@ -37,7 +37,7 @@ function isMedication(value: unknown): value is MedicationInput {
       (typeof item.medicationGroupId === 'string' &&
        item.medicationGroupId.length > 0 &&
        item.medicationGroupId.length <= 100)) &&
-    (item.slotNumber === undefined || (Number.isInteger(item.slotNumber) && item.slotNumber >= 1 && item.slotNumber <= 6)) &&
+    (item.slotNumber === undefined || (typeof item.slotNumber === "number" && Number.isInteger(item.slotNumber) && item.slotNumber >= 1 && item.slotNumber <= 6)) &&
     Array.isArray(item.completedDates) &&
     item.completedDates.every(
       (date) =>
