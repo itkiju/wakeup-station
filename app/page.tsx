@@ -978,10 +978,10 @@ export default function Home() {
   const medicationHistoryPendingRef = useRef(new Set<string>());
 
   // 복약 완료 및 취소 기록을 Neon에 저장
-  async function toggleMedicationComplete(id: string): Promise<boolean> {
+  async function toggleMedicationComplete(id: string, occurrenceDate?: string): Promise<boolean> {
     if (!now) return false;
 
-    const today = getDateKey(now);
+    const today = occurrenceDate ?? getDateKey(now);
     const medication = medications.find((item) => item.id === id);
 
     if (!medication) return false;
@@ -1293,12 +1293,13 @@ export default function Home() {
 
     if (!medication) return;
 
-    if (medication.completedDates.includes(getDateKey(now))) {
+    const alertOccurrenceDate = /^\d{4}-\d{2}-\d{2}/.exec(activeMedicationAlertKey ?? "")?.[0] ?? getDateKey(now);
+    if (medication.completedDates.includes(alertOccurrenceDate)) {
       dismissMedicationAlert();
       return;
     }
 
-    const saved = await toggleMedicationComplete(medicationAlert.id);
+    const saved = await toggleMedicationComplete(medicationAlert.id, alertOccurrenceDate);
 
     if (saved) {
       dismissMedicationAlert();
