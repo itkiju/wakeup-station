@@ -12,12 +12,24 @@ export type ReminderTimeResult = {
   source: "original" | "adjusted" | "delay" | "blocked";
 };
 
+const SEOUL_TIME_ZONE = "Asia/Seoul";
+
+function seoulParts(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: SEOUL_TIME_ZONE,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(date);
+  const fields: Record<string, string> = {};
+  for (const part of parts) {
+    if (part.type !== "literal") fields[part.type] = part.value;
+  }
+  return fields;
+}
+
 function dateKey(date: Date): string {
-  return [
-    date.getFullYear(),
-    String(date.getMonth() + 1).padStart(2, "0"),
-    String(date.getDate()).padStart(2, "0"),
-  ].join("-");
+  const p = seoulParts(date);
+  return `${p.year}-${p.month}-${p.day}`;
 }
 
 function validReminderTime(
@@ -31,10 +43,8 @@ function validReminderTime(
   if (Number.isNaN(parsed.getTime())) return null;
   if (dateKey(parsed) !== today) return null;
 
-  return [
-    String(parsed.getHours()).padStart(2, "0"),
-    String(parsed.getMinutes()).padStart(2, "0"),
-  ].join(":");
+  const p = seoulParts(parsed);
+  return `${p.hour}:${p.minute}`;
 }
 
 export function isMedicationReminderDue(
@@ -42,23 +52,14 @@ export function isMedicationReminderDue(
   now: Date,
   windowMinutes = 5
 ): boolean {
-  if (!reminderTime) return false;
-
-  const match = /^(\d{2}):(\d{2})$/.exec(reminderTime);
-  if (!match) return false;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-
-  if (hours > 23 || minutes > 59) return false;
-
-  const scheduled = new Date(now);
-  scheduled.setHours(hours, minutes, 0, 0);
-
-  const elapsed = now.getTime() - scheduled.getTime();
-
-  return elapsed >= 0 &&
-    elapsed < windowMinutes * 60 * 1000;
+  if (!reminderTime || !Number.isFinite(now.getTime())) return false;
+  const match = /^([01]\\d|2[0-3]):([0-5]\\d)$/.exec(reminderTime);
+  if (!match || !Number.isFinite(windowMinutes) || windowMinutes <= 0) return false;
+  const p = seoulParts(now);
+  const currentSeconds = Number(p.hour) * 3600 + Number(p.minute) * 60 + now.getUTCSeconds();
+  const scheduledSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60;
+  const elapsed = currentSeconds - scheduledSeconds;
+  return elapsed >= 0 && elapsed < windowMinutes * 60;
 }
 
 export function resolveMedicationReminderTime(
