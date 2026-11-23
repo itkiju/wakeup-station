@@ -175,6 +175,9 @@ export async function POST(request: Request) {
 
     // 6. 뚜껑 열림 시간 추적: 3분 연속 열림 시 경고, 닫히면 즉시 해제.
     // DB가 상태를 저장하므로 브라우저가 닫혀 있어도 동작합니다.
+    // Legacy databases may not yet have the lid warning state table.
+    // Do not reject valid sensor telemetry when only this optional alert fails.
+    try {
     const lidRows = await sql`
       INSERT INTO device_lid_alerts (device_id, opened_at, active, notified_at, updated_at)
       VALUES (
@@ -238,6 +241,13 @@ export async function POST(request: Request) {
           console.error("Lid push dispatch failed:", pushError);
         }
       }
+    }
+
+    } catch (lidError) {
+      const missingTable = lidError instanceof Error &&
+        "code" in lidError && lidError.code === "42P01";
+      if (!missingTable) throw lidError;
+      console.warn("Lid alert state table is missing; telemetry saved, lid warning skipped.");
     }
 
     // 5. 저장 성공 응답
