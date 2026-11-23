@@ -53,7 +53,7 @@ export function isMedicationReminderDue(
   windowMinutes = 5
 ): boolean {
   if (!reminderTime || !Number.isFinite(now.getTime())) return false;
-  const match = /^([01]\\d|2[0-3]):([0-5]\\d)$/.exec(reminderTime);
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(reminderTime);
   if (!match || !Number.isFinite(windowMinutes) || windowMinutes <= 0) return false;
   const p = seoulParts(now);
   const currentSeconds = Number(p.hour) * 3600 + Number(p.minute) * 60 + now.getUTCSeconds();
