@@ -299,6 +299,7 @@ export default function Home() {
     Record<string, {
       adjustedAt: string | null;
       delayedUntil: string | null;
+      delayedScheduledDate: string | null;
     }>
   >({});
 
