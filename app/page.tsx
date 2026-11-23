@@ -299,6 +299,7 @@ export default function Home() {
     Record<string, {
       adjustedAt: string | null;
       delayedUntil: string | null;
+      delayedScheduledDate: string | null;
     }>
   >({});
 
@@ -1145,6 +1146,7 @@ export default function Home() {
         const nextTimes: Record<string, {
           adjustedAt: string | null;
           delayedUntil: string | null;
+          delayedScheduledDate: string | null;
         }> = {};
 
         for (const item of result.medications) {
@@ -1158,6 +1160,10 @@ export default function Home() {
             delayedUntil:
               typeof item.delayed_until === "string"
                 ? item.delayed_until
+                : null,
+            delayedScheduledDate:
+              typeof item.delayed_scheduled_date === "string"
+                ? item.delayed_scheduled_date
                 : null,
           };
         }
@@ -1207,11 +1213,23 @@ export default function Home() {
     let nextAlertKey: string | null = null;
 
     const medication = medications.find((item) => {
-      const day = weekDays[(now.getDay() + 6) % 7];
       const reminder = serverReminderTimes[item.id];
 
       // 서버 데이터에 해당 약이 없다면 알림을 보류한다.
       if (!reminder) return false;
+
+      const delayedDate = reminder.delayedScheduledDate;
+      const delayedAt = reminder.delayedUntil ? new Date(reminder.delayedUntil) : null;
+      const hasActiveDelay = Boolean(
+        delayedDate &&
+        /^\d{4}-\d{2}-\d{2}$/.test(delayedDate) &&
+        delayedAt &&
+        Number.isFinite(delayedAt.getTime()) &&
+        Math.abs(now.getTime() - delayedAt.getTime()) < 5 * 60 * 1000
+      );
+      const occurrenceDate = hasActiveDelay ? delayedDate! : todayKey;
+      const occurrenceDay = new Date(`${occurrenceDate}T12:00:00+09:00`);
+      const day = weekDays[(occurrenceDay.getUTCDay() + 6) % 7];
 
       const resolved = resolveMedicationReminderTime({
         originalTime: item.time,
@@ -1219,11 +1237,11 @@ export default function Home() {
         delayedUntil: reminder.delayedUntil,
         now,
         serverReady: isReminderDataReady,
-        completed: item.completedDates.includes(todayKey),
+        completed: item.completedDates.includes(occurrenceDate),
       });
 
       const alertKey =
-        `${todayKey}-${item.id}-${resolved.source}-${resolved.time}`;
+        `${occurrenceDate}-${item.id}-${resolved.source}-${resolved.time}`;
 
       const shouldAlert =
         item.days.includes(day) &&

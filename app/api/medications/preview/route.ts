@@ -59,13 +59,28 @@ export async function GET(request: Request) {
         s.medication_group_id,
         s.slot_number,
         d.delay_minutes,
-        d.delayed_until
+        d.delayed_until,
+        TO_CHAR(d.scheduled_date, 'YYYY-MM-DD') AS delayed_scheduled_date
       FROM medication_group_schedules s
-      LEFT JOIN medication_delays d
-        ON d.sync_group_id = s.sync_group_id
-        AND d.medication_id = s.medication_id
-        AND d.scheduled_date =
-          (NOW() AT TIME ZONE 'Asia/Seoul')::date
+      LEFT JOIN LATERAL (
+        SELECT delay_minutes, delayed_until, scheduled_date
+        FROM medication_delays d
+        WHERE d.sync_group_id = s.sync_group_id
+          AND d.medication_id = s.medication_id
+          AND (
+            d.scheduled_date = (NOW() AT TIME ZONE 'Asia/Seoul')::date
+            OR (
+              d.scheduled_date = (NOW() AT TIME ZONE 'Asia/Seoul')::date - 1
+              AND d.delayed_until >= NOW() - INTERVAL '5 minutes'
+              AND d.delayed_until <= NOW() + INTERVAL '5 minutes'
+            )
+          )
+        ORDER BY
+          CASE WHEN d.delayed_until BETWEEN NOW() - INTERVAL '5 minutes'
+            AND NOW() + INTERVAL '5 minutes' THEN 0 ELSE 1 END,
+          d.scheduled_date DESC
+        LIMIT 1
+      ) d ON TRUE
         -- 오늘의 K4 지연 기록은 알림 시각이 지나도 유지한다.
         -- 웹앱에서 지연 알림의 정확한 발생 시각을 판단한다.
       WHERE s.sync_group_id = ${context.syncGroupId}::uuid
