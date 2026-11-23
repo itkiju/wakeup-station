@@ -8,6 +8,9 @@ export default function DeviceStatusPanel() {
   const humidity = status?.humidity;
   const warning = status?.humidityWarning === true;
   const caution = humidity != null && humidity >= 55;
+  const lidWarning = status?.lidWarning === true;
+  const lidOpenedAt = status?.lidOpenedAt;
+
   const environmentLabel = !online ? "최근 측정값 (기기 오프라인)" : warning ? "습도 경고" : caution ? "습도 주의" : "보관 환경 정상";
 
   return (
@@ -74,6 +77,19 @@ export default function DeviceStatusPanel() {
             {environmentLabel} · 60% 이상 5분 지속 시 경고 · 55% 미만 5분 유지 시 해제
           </p>
           {!online && <p className="mt-2 text-xs text-amber-300">현재 측정 중이 아니므로 이 상태는 과거 데이터입니다.</p>}
+        </div>
+      )}
+
+      {hasData && status?.lidOpen === true && (
+        <div role="status" aria-live="polite" className={`mt-5 rounded-2xl border p-4 ${lidWarning ? "border-red-400/40 bg-red-500/10" : "border-amber-400/30 bg-amber-500/10"}`}>
+          <p className={`text-sm font-semibold ${lidWarning ? "text-red-300" : "text-amber-300"}`}>
+            {lidWarning ? "⚠️ 약통 뚜껑이 3분 이상 열려 있습니다" : "🔓 약통 뚜껑이 열려 있습니다"}
+          </p>
+          <p className="mt-2 text-sm text-slate-300">
+            {lidWarning ? "약품 보관을 위해 뚜껑을 닫아주세요. 알림 권한이 허용된 기기로 푸시 발송을 시도합니다." : "뚜껑이 3분 이상 열린 상태로 유지되면 경고가 발생합니다."}
+          </p>
+          {lidOpenedAt && <p className="mt-2 text-xs text-slate-400">열림 시작: {new Date(lidOpenedAt).toLocaleString("ko-KR")}</p>}
+          {!online && <p className="mt-2 text-xs text-amber-300">ESP32 오프라인: 마지막으로 수신한 상태이며 현재 뚜껑 상태는 확인할 수 없습니다.</p>}
         </div>
       )}
 

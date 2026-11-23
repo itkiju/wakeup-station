@@ -173,6 +173,73 @@ export async function POST(request: Request) {
       `;
     }
 
+    // 6. 뚜껑 열림 시간 추적: 3분 연속 열림 시 경고, 닫히면 즉시 해제.
+    // DB가 상태를 저장하므로 브라우저가 닫혀 있어도 동작합니다.
+    const lidRows = await sql`
+      INSERT INTO device_lid_alerts (device_id, opened_at, active, notified_at, updated_at)
+      VALUES (
+        ${context.deviceId}::uuid,
+        CASE WHEN ${lidOpen} THEN NOW() ELSE NULL END,
+        FALSE, NULL, NOW()
+      )
+      ON CONFLICT (device_id) DO UPDATE SET
+        opened_at = CASE
+          WHEN ${lidOpen} THEN COALESCE(device_lid_alerts.opened_at, NOW())
+          ELSE NULL END,
+        active = CASE
+          WHEN NOT ${lidOpen} THEN FALSE
+          WHEN device_lid_alerts.opened_at <= NOW() - INTERVAL '3 minutes' THEN TRUE
+          ELSE device_lid_alerts.active END,
+        notified_at = CASE
+          WHEN NOT ${lidOpen} THEN NULL
+          ELSE device_lid_alerts.notified_at END,
+        updated_at = NOW()
+      RETURNING active, (active AND notified_at IS NULL) AS needs_notification
+    `;
+
+    if (lidRows[0]?.active === true && lidRows[0]?.needs_notification === true) {
+      // 동시 요청이 있어도 한 요청만 푸시 발송을 담당합니다.
+      const claimedLid = await sql`
+        UPDATE device_lid_alerts SET notified_at = NOW()
+        WHERE device_id = ${context.deviceId}::uuid
+          AND active = TRUE AND notified_at IS NULL
+        RETURNING device_id
+      `;
+      if (claimedLid.length > 0) {
+        try {
+          const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+          const privateKey = process.env.VAPID_PRIVATE_KEY;
+          const subject = process.env.VAPID_SUBJECT;
+          if (!publicKey || !privateKey || !subject) throw new Error("VAPID configuration missing");
+          webpush.setVapidDetails(subject, publicKey, privateKey);
+          const subscriptions = await sql`
+            SELECT p.endpoint, p.p256dh, p.auth
+            FROM push_subscriptions p
+            JOIN device_registrations d ON d.id = p.device_id
+            WHERE d.sync_group_id = ${context.syncGroupId}::uuid
+              AND d.revoked_at IS NULL
+          `;
+          const payload = JSON.stringify({
+            title: "⚠️ WakeUp Station Pro 뚜껑 열림",
+            body: "약통 뚜껑이 3분 이상 열려 있습니다. 약품 보관을 위해 뚜껑을 닫아주세요.",
+            url: "/",
+            tag: "lid-open-warning",
+          });
+          const results = await Promise.allSettled(subscriptions.map((sub) =>
+            webpush.sendNotification({
+              endpoint: String(sub.endpoint),
+              keys: { p256dh: String(sub.p256dh), auth: String(sub.auth) },
+            }, payload)
+          ));
+          for (const result of results) {
+            if (result.status === "rejected") console.error("Lid push failed:", result.reason);
+          }
+        } catch (pushError) {
+          console.error("Lid push dispatch failed:", pushError);
+        }
+      }
+    }
+
     // 5. 저장 성공 응답
     return NextResponse.json(
       {

@@ -10,6 +10,8 @@ export type DeviceStatus = {
   humidityWarning: boolean;
   humidityHighSince: string | null;
   lidOpen: boolean | null;
+  lidWarning: boolean;
+  lidOpenedAt: string | null;
   lastSeen: string | null;
 };
 
