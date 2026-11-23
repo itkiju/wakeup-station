@@ -33,5 +33,7 @@ export function isMedicationOccurrenceDueOn(
   delayedUntil?: Date | null,
 ): boolean {
   const result = effectiveMedicationAlert(scheduledAt, adjustedAt, delayedUntil);
-  return seoulDateKey(result.alertAt) === seoulDateKey(now);
+  if (!Number.isFinite(now.getTime())) return false;
+  const elapsed = now.getTime() - result.alertAt.getTime();
+  return elapsed >= 0 && elapsed < 5 * 60 * 1000;
 }
