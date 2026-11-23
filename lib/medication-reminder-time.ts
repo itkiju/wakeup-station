@@ -58,7 +58,7 @@ export function isMedicationReminderDue(
   const p = seoulParts(now);
   const currentSeconds = Number(p.hour) * 3600 + Number(p.minute) * 60 + now.getUTCSeconds();
   const scheduledSeconds = Number(match[1]) * 3600 + Number(match[2]) * 60;
-  const elapsed = currentSeconds - scheduledSeconds;
+  const elapsed = (currentSeconds - scheduledSeconds + 86400) % 86400;
   return elapsed >= 0 && elapsed < windowMinutes * 60;
 }
 
