@@ -60,7 +60,7 @@ export async function GET(request: Request) {
         s.slot_number,
         d.delay_minutes,
         d.delayed_until,
-        d.scheduled_date AS delayed_scheduled_date
+        TO_CHAR(d.scheduled_date, 'YYYY-MM-DD') AS delayed_scheduled_date
       FROM medication_group_schedules s
       LEFT JOIN LATERAL (
         SELECT delay_minutes, delayed_until, scheduled_date
